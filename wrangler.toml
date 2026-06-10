@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "在这里填你的KV命名空间ID"
+id = "86bcc919b18d482098c83e8d8117f712"
 
 # 每5分钟自动抓一次（免费版安全范围内）
 # 每10分钟改成：*/10 * * * *
