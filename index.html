@@ -1,0 +1,2227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f5f6fa">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="乘风追票">
+<link rel="manifest" href="manifest.json">
+<title>乘风2026 · 投票追踪</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --surface: #ffffff;
+    --surface2: #f0f1f5;
+    --border: #d8dae8;
+    --accent: #e63b6e;
+    --accent2: #5a6fc4;
+    --gold: #b8860b;
+    --text: #1a1a2e;
+    --text2: #4a4a6a;
+    --text3: #8888aa;
+    --green: #1a9e6a;
+    --red: #d93050;
+    --orange: #d07020;
+    --font-display: 'Noto Serif SC', serif;
+    --font-body: 'Noto Sans SC', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --r: 10px;
+    --r2: 6px;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    background: linear-gradient(135deg, #ffffff 0%, #f0f2fa 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 20px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+  }
+  .logo { display: flex; align-items: baseline; gap: 8px; }
+  .logo-main {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 1.3rem;
+    background: linear-gradient(135deg, #1a5fa8, #e63b6e);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 0.05em;
+  }
+  .logo-sub { font-size: 0.7rem; color: var(--text3); letter-spacing: 0.1em; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 500;
+    border: 1px solid transparent; transition: all 0.3s;
+  }
+  .status-pill.running { background: rgba(26,158,106,0.1); border-color: rgba(26,158,106,0.4); color: var(--green); }
+  .status-pill.paused  { background: rgba(217,48,80,0.1);  border-color: rgba(217,48,80,0.3);  color: var(--red); }
+  .status-pill.offline { background: rgba(136,136,170,0.1); border-color: rgba(136,136,170,0.3); color: var(--text2); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.5s infinite; }
+  .status-pill.paused .dot, .status-pill.offline .dot { animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.7)} }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+
+  /* countdown */
+  .countdown-bar {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 12px 16px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .countdown-label { font-size: 0.75rem; color: var(--text2); }
+  .countdown-timer { font-family: var(--font-mono); font-size: 1.1rem; color: var(--gold); letter-spacing: 0.05em; min-width: 50px; text-align: right; }
+  .progress-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 2px; transition: width 1s linear; }
+  .btn-group { display: flex; gap: 8px; }
+  .btn { padding: 7px 14px; border-radius: var(--r2); font-size: 0.78rem; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; font-family: var(--font-body); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #c2224e; border-color: #c2224e; }
+  .btn-secondary { background: transparent; color: var(--text2); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--text2); color: var(--text); }
+  .btn-active { background: rgba(26,95,168,0.08); color: #1a5fa8; border-color: #1a5fa8; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* rank cards */
+  .rank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media(max-width:600px) { .rank-grid { grid-template-columns: 1fr; } }
+  .rank-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 18px 16px 14px;
+    position: relative; overflow: hidden; transition: border-color 0.2s;
+  }
+  .rank-card.alert { border-color: var(--red); animation: alertglow 1s ease-in-out 3; }
+  .rank-card.warn  { border-color: var(--orange); }
+  @keyframes alertglow { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 20px rgba(217,48,80,0.25)} }
+  .rank-badge { position: absolute; top: 12px; right: 14px; font-size: 0.7rem; color: var(--text3); font-family: var(--font-mono); }
+  .rank-name { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; margin-bottom: 8px; letter-spacing: 0.05em; }
+  .rank-votes { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 600; color: var(--gold); letter-spacing: -0.02em; margin-bottom: 10px; }
+  .rank-deltas { display: flex; flex-direction: column; gap: 4px; }
+  .delta-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.72rem; }
+  .delta-label { color: var(--text3); }
+  .delta-val { font-family: var(--font-mono); }
+  .delta-val.pos { color: var(--green); }
+  .delta-val.neg { color: var(--red); }
+  .delta-val.neutral { color: var(--text2); }
+  .alert-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: rgba(217,48,80,0.08); color: var(--red);
+    border: 1px solid rgba(217,48,80,0.3); border-radius: 4px;
+    padding: 1px 6px; font-size: 0.65rem; margin-top: 6px;
+  }
+  .warn-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: rgba(208,112,32,0.08); color: var(--orange);
+    border: 1px solid rgba(208,112,32,0.3); border-radius: 4px;
+    padding: 1px 6px; font-size: 0.65rem; margin-top: 6px;
+  }
+
+  /* alert toast */
+  #alert-toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(217,48,80,0.95); color: #fff;
+    border-radius: var(--r); padding: 12px 20px;
+    font-size: 0.85rem; font-weight: 600;
+    box-shadow: 0 4px 24px rgba(217,48,80,0.3);
+    z-index: 9999; display: none; max-width: 90vw; text-align: center;
+    animation: toastIn 0.3s ease;
+  }
+  @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(20px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+  /* diff row */
+  .diff-row {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 12px 16px;
+    display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .diff-item { display: flex; flex-direction: column; gap: 2px; }
+  .diff-label { font-size: 0.7rem; color: var(--text3); }
+  .diff-value { font-family: var(--font-mono); font-size: 1rem; color: var(--text); }
+
+  /* summary bar (1/5/10 min quick view) */
+  .summary-bar {
+    background: linear-gradient(135deg, #1a1a3e 0%, #0f2040 100%);
+    border: 1px solid rgba(90,111,196,0.4);
+    border-radius: var(--r); padding: 12px 16px; margin-bottom: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .summary-bar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .summary-bar-title { font-size: 0.72rem; color: rgba(200,210,255,0.7); letter-spacing: 0.1em; text-transform: uppercase; }
+  .summary-win-btns { display: flex; gap: 4px; }
+  .summary-win-btn {
+    padding: 2px 9px; border-radius: 12px; font-size: 0.68rem; font-family: var(--font-mono);
+    cursor: pointer; border: 1px solid rgba(90,111,196,0.4); background: transparent;
+    color: rgba(200,210,255,0.6); transition: all 0.2s;
+  }
+  .summary-win-btn:hover { color: #fff; border-color: rgba(90,111,196,0.8); }
+  .summary-win-btn.active { background: rgba(90,111,196,0.35); color: #fff; border-color: #5a6fc4; }
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  @media(max-width:600px) { .summary-grid { grid-template-columns: 1fr; } }
+  .summary-card {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(90,111,196,0.2);
+    border-radius: 8px; padding: 10px 12px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .summary-card-left { display: flex; flex-direction: column; gap: 2px; }
+  .summary-card-rank { font-size: 0.62rem; color: rgba(200,210,255,0.5); font-family: var(--font-mono); }
+  .summary-card-name { font-family: var(--font-display); font-size: 0.92rem; color: #e8eeff; font-weight: 700; }
+  .summary-card-votes { font-family: var(--font-mono); font-size: 0.75rem; color: rgba(200,210,255,0.55); }
+  .summary-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .summary-delta-big { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 600; }
+  .summary-delta-big.pos { color: #4de88e; }
+  .summary-delta-big.neg { color: #ff6070; }
+  .summary-delta-big.neutral { color: rgba(200,210,255,0.5); }
+  .summary-rate { font-size: 0.62rem; color: rgba(200,210,255,0.45); font-family: var(--font-mono); }
+  .summary-alert-tag {
+    font-size: 0.6rem; background: rgba(217,48,80,0.25); color: #ff8090;
+    border: 1px solid rgba(217,48,80,0.4); border-radius: 3px; padding: 0 5px; margin-top: 2px;
+  }
+
+  /* interval selector */
+  .interval-selector { display: flex; align-items: center; gap: 6px; }
+  .interval-label { font-size: 0.7rem; color: var(--text3); }
+
+  /* daily summary panel */
+  .daily-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); margin-bottom: 16px; overflow: hidden;
+  }
+  .daily-panel-header {
+    background: var(--surface2); border-bottom: 1px solid var(--border);
+    padding: 9px 14px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .daily-panel-title { font-size: 0.73rem; color: var(--text2); font-weight: 500; letter-spacing: 0.05em; }
+  .daily-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  .daily-table thead th {
+    background: var(--surface2); padding: 7px 12px; text-align: left;
+    color: var(--text3); font-weight: 500; font-size: 0.7rem;
+    letter-spacing: 0.05em; border-bottom: 1px solid var(--border);
+  }
+  .daily-table tbody tr { border-bottom: 1px solid rgba(216,218,232,0.6); transition: background 0.15s; }
+  .daily-table tbody tr:last-child { border-bottom: none; }
+  .daily-table tbody tr:hover { background: var(--surface2); }
+  .daily-table td { padding: 7px 12px; vertical-align: middle; }
+  .day-badge {
+    display: inline-block; background: rgba(26,95,168,0.08); color: #1a5fa8;
+    border: 1px solid rgba(26,95,168,0.2); border-radius: 4px;
+    padding: 1px 7px; font-family: var(--font-mono); font-size: 0.7rem;
+  }
+
+  /* history filter row */
+  .history-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .history-filter select {
+    font-size: 0.72rem; padding: 3px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-family: var(--font-body);
+  }
+
+  /* watchlist */
+  .watchlist-bar {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 10px 16px; margin-bottom: 16px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .watchlist-label { font-size: 0.72rem; color: var(--text3); white-space: nowrap; }
+  .watchlist-items { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+  .watch-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px; font-size: 0.7rem; font-family: var(--font-mono);
+  }
+  .watch-chip.surging { border-color: var(--orange); background: rgba(208,112,32,0.08); }
+  .watch-chip .chip-name { color: var(--text2); }
+  .watch-chip .chip-rank { color: var(--text3); }
+  .watch-chip .chip-delta { color: var(--green); }
+  .watch-chip.surging .chip-name { color: var(--orange); }
+
+  /* section title */
+  .section-title {
+    font-size: 0.75rem; letter-spacing: 0.12em; color: var(--text3);
+    text-transform: uppercase; margin-bottom: 10px; padding-left: 2px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  /* history table */
+  .history-table-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); overflow: hidden; margin-bottom: 16px;
+    max-height: 420px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .history-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  .history-table thead th {
+    background: var(--surface2); padding: 9px 12px; text-align: left;
+    color: var(--text3); font-weight: 500; font-size: 0.7rem;
+    letter-spacing: 0.05em; border-bottom: 1px solid var(--border);
+  }
+  .history-table tbody tr { border-bottom: 1px solid rgba(216,218,232,0.8); transition: background 0.15s; }
+  .history-table tbody tr:last-child { border-bottom: none; }
+  .history-table tbody tr:hover { background: var(--surface2); }
+  .history-table td { padding: 8px 12px; vertical-align: middle; }
+  .td-mono { font-family: var(--font-mono); }
+  .td-pos { color: var(--green); }
+  .td-neg { color: var(--red); }
+  .td-neutral { color: var(--text2); }
+  .td-alert { color: var(--red); font-size: 0.65rem; background: rgba(217,48,80,0.08); padding: 1px 5px; border-radius: 3px; }
+  .td-warn  { color: var(--orange); font-size: 0.65rem; background: rgba(208,112,32,0.08); padding: 1px 5px; border-radius: 3px; }
+
+  /* export */
+  .export-section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px;
+  }
+  .export-label { font-size: 0.8rem; color: var(--text2); }
+  .export-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* notify feed */
+  .notify-feed {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); max-height: 260px; overflow-y: auto;
+    font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.7;
+    color: var(--text2); padding: 12px 14px; margin-bottom: 16px;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .notify-feed .nf-time  { color: var(--text3); }
+  .notify-feed .nf-alert { color: var(--red); }
+  .notify-feed .nf-warn  { color: var(--orange); }
+  .notify-feed .nf-info  { color: var(--green); }
+  .notify-feed .nf-sep   { color: var(--border); }
+  .notify-entry { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .notify-entry:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+  /* empty */
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text3); }
+  .empty-state .es-icon { font-size: 2rem; margin-bottom: 12px; }
+  .empty-state p { font-size: 0.82rem; line-height: 1.6; }
+
+  .last-update { font-size: 0.7rem; color: var(--text3); font-family: var(--font-mono); }
+
+  /* install banner */
+  #install-banner { display:none; background: linear-gradient(135deg, #5a6fc4, #e63b6e); color: #fff; padding: 10px 16px; font-size: 0.78rem; align-items: center; justify-content: space-between; gap: 10px; }
+  #install-banner.hidden { display: none !important; }
+  #install-banner .ib-text { flex: 1; }
+  #install-banner .ib-close { background: transparent; border: none; color: rgba(255,255,255,0.7); cursor: pointer; font-size: 1rem; padding: 0 4px; }
+
+  /* chart section */
+  .chart-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; margin-bottom: 16px; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: var(--surface2); padding-right: 12px; }
+  .chart-tabs { display: flex; }
+  .chart-tab {
+    padding: 9px 18px; font-size: 0.75rem; color: var(--text3);
+    cursor: pointer; border: none; background: transparent;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+    font-family: var(--font-body); letter-spacing: 0.03em;
+  }
+  .chart-tab:hover { color: var(--text2); }
+  .chart-tab.active { color: var(--text); border-bottom-color: #1a5fa8; }
+  .chart-controls { display: flex; gap: 6px; }
+  .chart-mode-btn {
+    padding: 4px 10px; border-radius: var(--r2); font-size: 0.7rem;
+    cursor: pointer; border: 1px solid var(--border);
+    background: transparent; color: var(--text3); font-family: var(--font-body);
+    transition: all 0.2s;
+  }
+  .chart-mode-btn:hover { color: var(--text2); border-color: var(--text3); }
+  .chart-mode-btn.active { background: rgba(26,95,168,0.1); color: #1a5fa8; border-color: #1a5fa8; }
+  .chart-panel { display: none; padding: 16px 16px 12px; }
+  .chart-panel.active { display: block; }
+  .chart-canvas-wrap { position: relative; width: 100%; height: 280px; }
+  .chart-canvas-wrap canvas { width: 100% !important; height: 280px !important; display: block; }
+  .chart-sub-controls { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .granularity-label { font-size: 0.7rem; color: var(--text3); margin-right: 2px; }
+  .chart-legend {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text2); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-rect { width: 12px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .chart-empty { text-align: center; padding: 50px 20px; color: var(--text3); font-size: 0.82rem; }
+
+  /* export chart btn */
+  .btn-export-chart {
+    padding: 4px 10px; border-radius: var(--r2); font-size: 0.7rem;
+    cursor: pointer; border: 1px solid var(--border);
+    background: transparent; color: var(--text3); font-family: var(--font-body);
+    transition: all 0.2s; margin-left: 8px;
+  }
+  .btn-export-chart:hover { color: #1a5fa8; border-color: #1a5fa8; background: rgba(26,95,168,0.06); }
+
+  /* beijing clock */
+  .bjt-clock { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text3); padding: 0 4px; }
+</style>
+</head>
+<body>
+
+<div id="alert-toast"></div>
+
+<div id="install-banner" class="hidden">
+  <span class="ib-text">📲 添加到主屏幕，离线也能追票！</span>
+  <button class="btn btn-primary" id="btn-install" style="font-size:0.72rem;padding:5px 10px;">安装</button>
+  <button class="ib-close" id="btn-close-banner">✕</button>
+</div>
+
+<header>
+  <div class="logo">
+    <span class="logo-main">乘风2026</span>
+    <span class="logo-sub">投票追踪</span>
+  </div>
+  <div class="header-right">
+    <span class="bjt-clock" id="bjt-clock">北京 --:--:--</span>
+    <span class="last-update" id="last-update-label">—</span>
+    <div class="status-pill offline" id="status-pill">
+      <div class="dot"></div>
+      <span id="status-text">未启动</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- countdown -->
+  <div class="countdown-bar">
+    <span class="countdown-label">下次抓取</span>
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <span class="countdown-timer" id="countdown-timer">—</span>
+    <div class="interval-selector">
+      <span class="interval-label">间隔</span>
+      <select id="interval-select" style="font-size:0.72rem;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:var(--font-body)">
+        <option value="60000">1分钟</option>
+        <option value="300000">5分钟</option>
+        <option value="600000" selected>10分钟</option>
+      </select>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-fetch-now">立即抓取</button>
+      <button class="btn btn-secondary" id="btn-toggle">启动</button>
+    </div>
+  </div>
+
+  <!-- ── 快速摘要条 ── -->
+  <div class="summary-bar" id="summary-bar" style="display:none">
+    <div class="summary-bar-header">
+      <span class="summary-bar-title">⚡ 实时涨幅速览</span>
+      <div class="summary-win-btns">
+        <button class="summary-win-btn active" data-win="1">1分钟</button>
+        <button class="summary-win-btn" data-win="5">5分钟</button>
+        <button class="summary-win-btn" data-win="10">10分钟</button>
+        <button class="summary-win-btn" data-win="60">1小时</button>
+      </div>
+    </div>
+    <div class="summary-grid" id="summary-grid"></div>
+  </div>
+
+  <!-- rank cards 2-4 -->
+  <div class="rank-grid" id="rank-grid">
+    <div class="empty-state" style="grid-column:1/-1">
+      <div class="es-icon">🎤</div>
+      <p>点击「启动」开始自动追踪<br>或点击「立即抓取」获取当前数据</p>
+    </div>
+  </div>
+
+  <!-- watchlist 5-9 -->
+  <div class="watchlist-bar" id="watchlist-bar" style="display:none">
+    <span class="watchlist-label">👁 监控 5–9 名</span>
+    <div class="watchlist-items" id="watchlist-items"></div>
+  </div>
+
+  <!-- diff row -->
+  <div class="diff-row" id="diff-row" style="display:none">
+    <div class="diff-item">
+      <span class="diff-label">第2→3名 差距</span>
+      <span class="diff-value td-mono" id="diff-23">—</span>
+    </div>
+    <div class="diff-item">
+      <span class="diff-label">第3→4名 差距</span>
+      <span class="diff-value td-mono" id="diff-34">—</span>
+    </div>
+    <div class="diff-item">
+      <span class="diff-label">第4→5名 差距</span>
+      <span class="diff-value td-mono" id="diff-45">—</span>
+    </div>
+    <div class="diff-item">
+      <span class="diff-label">总记录次数</span>
+      <span class="diff-value td-mono" id="total-count">—</span>
+    </div>
+    <div class="diff-item">
+      <span class="diff-label">已记录天数</span>
+      <span class="diff-value td-mono" id="recorded-days">—</span>
+    </div>
+    <div class="diff-item">
+      <span class="diff-label">今日首次记录</span>
+      <span class="diff-value td-mono" id="today-first">—</span>
+    </div>
+  </div>
+
+  <!-- daily summary -->
+  <div class="section-title" id="daily-title" style="display:none">
+    <span>每日涨幅汇总</span>
+    <span id="daily-subtitle" style="color:var(--text3);font-size:0.7rem"></span>
+  </div>
+  <div class="daily-panel" id="daily-panel" style="display:none">
+    <div class="daily-panel-header">
+      <span class="daily-panel-title">📅 按日统计 · 首末两次记录之差</span>
+      <button class="btn btn-secondary" onclick="exportCSV('daily')" style="font-size:0.68rem;padding:3px 8px;">导出日报</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="daily-table" id="daily-table">
+        <thead><tr><th>日期</th><th>姓名</th><th>当日起始票数</th><th>当日结束票数</th><th>当日总涨幅</th><th>记录条数</th></tr></thead>
+        <tbody id="daily-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- charts -->
+  <div class="section-title" id="chart-title" style="display:none"><span>数据图表</span></div>
+  <div class="chart-section" id="chart-section" style="display:none">
+    <div class="chart-header">
+      <div class="chart-tabs">
+        <button class="chart-tab active" data-tab="trend">整体趋势</button>
+        <button class="chart-tab" data-tab="delta">分时段涨幅</button>
+        <button class="chart-tab" data-tab="daily-chart">每日汇总</button>
+      </div>
+      <div class="chart-controls">
+        <button class="chart-mode-btn active" id="gran-1min">1分钟</button>
+        <button class="chart-mode-btn" id="gran-5min">5分钟</button>
+        <button class="chart-mode-btn" id="gran-10min">10分钟</button>
+        <button class="chart-mode-btn" id="gran-hour">整小时</button>
+      </div>
+    </div>
+
+    <!-- trend panel: bar+line -->
+    <div class="chart-panel active" id="panel-trend">
+      <div class="chart-sub-controls">
+        <span class="granularity-label">图表类型：</span>
+        <button class="chart-mode-btn active" id="trend-bar-btn" data-mode="bar">柱状图</button>
+        <button class="chart-mode-btn" id="trend-line-btn" data-mode="line">折线图</button>
+        <button class="btn-export-chart" onclick="exportChartImage('canvas-trend','整体趋势')">📷 导出图片</button>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="canvas-trend" height="280"></canvas></div>
+      <div class="chart-legend" id="legend-trend"></div>
+    </div>
+
+    <!-- delta panel: bar+line -->
+    <div class="chart-panel" id="panel-delta">
+      <div class="chart-sub-controls">
+        <span class="granularity-label">图表类型：</span>
+        <button class="chart-mode-btn active" id="delta-bar-btn" data-mode="bar">柱状图</button>
+        <button class="chart-mode-btn" id="delta-line-btn" data-mode="line">折线图</button>
+        <button class="btn-export-chart" onclick="exportChartImage('canvas-delta','分时段涨幅')">📷 导出图片</button>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="canvas-delta" height="280"></canvas></div>
+      <div class="chart-legend" id="legend-delta"></div>
+    </div>
+
+    <!-- daily chart panel -->
+    <div class="chart-panel" id="panel-daily-chart">
+      <div class="chart-sub-controls">
+        <span class="granularity-label">图表类型：</span>
+        <button class="chart-mode-btn active" id="daily-bar-btn" data-mode="bar">柱状图（每日涨幅）</button>
+        <button class="chart-mode-btn" id="daily-line-btn" data-mode="line">折线图（跨天趋势）</button>
+        <button class="btn-export-chart" onclick="exportChartImage('canvas-daily','每日汇总')">📷 导出图片</button>
+      </div>
+      <div class="chart-canvas-wrap"><canvas id="canvas-daily" height="280"></canvas></div>
+      <div class="chart-legend" id="legend-daily"></div>
+    </div>
+  </div>
+
+  <!-- notify feed -->
+  <div class="section-title">
+    <span>播报记录</span>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="chart-mode-btn active" id="notify-tab-all" onclick="setNotifyTab('all')">全部</button>
+      <button class="chart-mode-btn" id="notify-tab-1min" onclick="setNotifyTab('1min')">1分钟</button>
+      <button class="chart-mode-btn" id="notify-tab-5min" onclick="setNotifyTab('5min')">5分钟</button>
+      <button class="chart-mode-btn" id="notify-tab-10min" onclick="setNotifyTab('10min')">10分钟</button>
+      <button class="chart-mode-btn" id="notify-tab-hour" onclick="setNotifyTab('hour')">每小时</button>
+      <button class="btn btn-secondary" id="btn-clear-notify" style="font-size:0.68rem;padding:3px 8px;">清空显示</button>
+    </div>
+  </div>
+  <div class="notify-feed" id="notify-feed">
+    <div class="empty-state" style="padding:20px 0;border:none;background:none">
+      <p>暂无播报记录</p>
+    </div>
+  </div>
+
+  <!-- history table -->
+  <div class="section-title" style="margin-top:20px">
+    <div class="history-filter">
+      <span>历史流水</span>
+      <select id="history-date-filter" onchange="renderHistoryTable()">
+        <option value="all">全部日期</option>
+        <option value="today" selected>今天</option>
+      </select>
+    </div>
+    <span id="history-count" style="color:var(--text3);font-size:0.7rem"></span>
+  </div>
+  <div class="history-table-wrap" id="history-wrap">
+    <div class="empty-state"><p>暂无记录</p></div>
+  </div>
+
+  <!-- export -->
+  <div class="export-section" style="margin-top:16px">
+    <span class="export-label">📥 导出数据</span>
+    <div class="export-btns">
+      <button class="btn btn-secondary" onclick="exportCSV('raw')">原始数据</button>
+      <button class="btn btn-secondary" onclick="exportCSV('live')">实时流水</button>
+      <button class="btn btn-secondary" onclick="exportCSV('live5')">5分钟流水</button>
+      <button class="btn btn-secondary" onclick="exportCSV('hourly')">整点报告</button>
+      <button class="btn btn-secondary" onclick="exportCSV('daily')">日报汇总</button>
+      <button class="btn btn-secondary" onclick="exportCSV('notify')">文字通知</button>
+      <button class="btn btn-secondary" onclick="exportAll()">全部导出</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ════════════════════════════════════════════
+// 常量
+// ════════════════════════════════════════════
+const API_URL     = "https://vote.api.mgtv.com/chengfeng/query_vote_list?os=win&did=f86d8e2a-eaa6-4878-a689-579d6dec2555&source=share_cf_zj_2026&invoker=mobile-zhipubao&appVersion=6.9.9_vipact&mac=f86d8e2a-eaa6-4878-a689-579d6dec2555&version=6.9.9_vipact";
+let INTERVAL_MS   = 10 * 60 * 1000;  // dynamic — changed by interval-select
+const ALERT_10MIN  = 18000;
+const ALERT_HOURLY = 100000;
+// 5-9名涨幅异常预警（10分钟内涨这么多就提示要冲进前四）
+const ALERT_WATCH_10MIN  = 15000;
+const DB_NAME      = "cf2026v2";
+const DB_VERSION   = 1;
+
+// ════════════════════════════════════════════
+// 北京时间工具（UTC+8，不依赖本机时区）
+// ════════════════════════════════════════════
+function getCSTDate() {
+  // Always compute UTC+8 regardless of local timezone
+  const utcMs = Date.now();
+  return new Date(utcMs + 8 * 3600 * 1000);
+}
+
+function fmtCSTDate(d) {
+  // d is a Date whose UTC fields represent CST time
+  const y = d.getUTCFullYear();
+  const M = String(d.getUTCMonth()+1).padStart(2,'0');
+  const D = String(d.getUTCDate()).padStart(2,'0');
+  const h = String(d.getUTCHours()).padStart(2,'0');
+  const m = String(d.getUTCMinutes()).padStart(2,'0');
+  const s = String(d.getUTCSeconds()).padStart(2,'0');
+  return `${y}-${M}-${D} ${h}:${m}:${s}`;
+}
+
+function hm(ts) { return ts.substring(11,16); }
+
+// Live clock
+setInterval(() => {
+  document.getElementById("bjt-clock").textContent = "北京 " + fmtCSTDate(getCSTDate()).substring(11,19);
+}, 1000);
+
+// ════════════════════════════════════════════
+// IndexedDB
+// ════════════════════════════════════════════
+let db;
+function openDB() {
+  return new Promise((res,rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains("snapshots")) {
+        const s = d.createObjectStore("snapshots", { keyPath:"id", autoIncrement:true });
+        s.createIndex("ts","ts");
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; res(db); };
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+function dbAdd(store, data) {
+  return new Promise((res,rej) => {
+    const tx = db.transaction(store,"readwrite");
+    const r = tx.objectStore(store).add(data);
+    r.onsuccess = () => res(r.result);
+    r.onerror   = e => rej(e.target.error);
+  });
+}
+function dbGetAll(store) {
+  return new Promise((res,rej) => {
+    const tx = db.transaction(store,"readonly");
+    const r  = tx.objectStore(store).getAll();
+    r.onsuccess = () => res(r.result);
+    r.onerror   = e => rej(e.target.error);
+  });
+}
+function dbClear(store) {
+  return new Promise((res,rej) => {
+    const tx = db.transaction(store,"readwrite");
+    const r  = tx.objectStore(store).clear();
+    r.onsuccess = () => res();
+    r.onerror   = e => rej(e.target.error);
+  });
+}
+
+// ════════════════════════════════════════════
+// 数据抓取  (ranks 1-9: 1st excluded from cards, 2-4 main, 5-9 watch)
+// ════════════════════════════════════════════
+async function fetchVotes() {
+  const t = Date.now();
+  const url = `https://rapid-king-78e4.one1seven799.workers.dev/?t=${t}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}，请确认 proxy.py 正在运行`);
+  const data = await resp.json();
+  if (data.errno !== 0) throw new Error(data.errmsg || "API错误");
+  const rows = [];
+  for (const p of data.data.vote_list) {
+    const voteOpt = p.option_name.find(o => o.option_name === "夯爆了");
+    const votes = voteOpt ? voteOpt.option_vote_number : 0;
+    rows.push({ name: p.vote_name, votes });
+  }
+  rows.sort((a,b) => b.votes - a.votes);
+  rows.forEach((r,i) => r.rank = i+1);
+  return rows; // return ALL ranks, we'll slice as needed
+}
+
+// ════════════════════════════════════════════
+// State
+// ════════════════════════════════════════════
+let running = false, timerId = null, countdownId = null, nextFetchAt = null;
+let allSnapshots = [];
+// granularity: "1min" | "5min" | "10min" | "hour"
+let granularity = "1min";
+// trend chart mode: "bar" | "line"
+let trendMode = "bar";
+// delta chart mode: "bar" | "line"
+let deltaMode = "bar";
+// daily chart mode: "bar" | "line"
+let dailyChartMode = "bar";
+// summary bar window: 1 | 5 | 10 | 60 (minutes)
+let summaryWindow = 1;
+// notify tab: "all" | "1min" | "5min" | "10min" | "hour"
+let notifyTab = "all";
+
+// Per-granularity notify histories (stored separately in memory)
+// notifyLines = all entries; notifyLines1min, notifyLines5min, notifyLines10min, notifyLinesHour
+const notifyLines = [];
+const notifyLines1min  = [];
+const notifyLines5min  = [];
+const notifyLines10min = [];
+const notifyLinesHour  = [];
+
+// ════════════════════════════════════════════
+// Alert toast
+// ════════════════════════════════════════════
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("alert-toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = "none"; }, 8000);
+}
+
+// ════════════════════════════════════════════
+// Main fetch loop
+// ════════════════════════════════════════════
+async function doFetch() {
+  setStatus("running","抓取中…");
+  try {
+    const cst   = getCSTDate();
+    const tsStr = fmtCSTDate(cst);
+    const allRows = await fetchVotes();
+
+    // Split rows
+    const mainRows  = allRows.filter(r => r.rank >= 2 && r.rank <= 4);  // cards
+    const watchRows = allRows.filter(r => r.rank >= 5 && r.rank <= 9);  // silent watch
+
+    // Find prev + hourStart snapshots
+    let prevSnap = null, hourStartSnap = null;
+    if (allSnapshots.length > 0) {
+      prevSnap = allSnapshots[allSnapshots.length-1];
+      const curHourPrefix = tsStr.substring(0,13);
+      hourStartSnap = allSnapshots.find(s => s.ts.startsWith(curHourPrefix)) || prevSnap;
+    }
+    const isNewHour = prevSnap && prevSnap.ts.substring(0,13) !== tsStr.substring(0,13);
+
+    // Save snap (rows = main 2-4, watchRows = 5-9)
+    const snap = {
+      ts: tsStr,
+      rows: mainRows,
+      watchRows,
+      prevTs: prevSnap?.ts || null,
+      hourStartTs: hourStartSnap?.ts || null
+    };
+    await dbAdd("snapshots", snap);
+    snap.id = allSnapshots.length + 1;
+    allSnapshots.push(snap);
+
+    // Check for watchlist surges
+    checkWatchSurge(watchRows, prevSnap, mainRows);
+
+    // Notify text
+    const notify = buildNotify(mainRows, watchRows, prevSnap, hourStartSnap, tsStr, isNewHour);
+
+    // Build per-granularity notify summaries
+    buildGranularNotifies(mainRows, prevSnap, hourStartSnap, tsStr, isNewHour);
+
+    // Update UI
+    renderCards(mainRows, prevSnap, hourStartSnap, tsStr);
+    renderSummaryBar(mainRows, tsStr);
+    renderWatchlist(watchRows, prevSnap);
+    renderDiffRow(allRows);
+    prependNotify(notify, tsStr, null);
+    renderHistoryTable();
+    renderDailyPanel();
+    renderAllCharts();
+    document.getElementById("last-update-label").textContent = `更新于 ${tsStr.substring(11,16)}`;
+    document.getElementById("total-count").textContent = allSnapshots.length + " 次";
+
+    setStatus(running ? "running" : "paused", running ? "追踪中" : "已暂停");
+  } catch(err) {
+    console.error(err);
+    appendNotifyError(err.message);
+    setStatus(running ? "running" : "paused", running ? "追踪中（上次失败）" : "失败");
+  }
+}
+
+// ════════════════════════════════════════════
+// 5-9名异常涨幅检测
+// ════════════════════════════════════════════
+function checkWatchSurge(watchRows, prevSnap, mainRows) {
+  if (!prevSnap || !watchRows.length) return;
+  const prevMap = Object.fromEntries((prevSnap.watchRows||[]).map(r=>[r.name,r.votes]));
+  const fourth = mainRows[2]; // current rank-4 person
+  for (const r of watchRows) {
+    const prev = prevMap[r.name];
+    if (prev === undefined) continue;
+    const delta = r.votes - prev;
+    // Check if surging enough to threaten rank 4
+    if (delta >= ALERT_WATCH_10MIN) {
+      const gap = fourth ? r.votes - fourth.votes : null;
+      if (gap !== null && gap > -50000) {
+        // Within striking distance of 4th
+        showToast(`🚨 ${r.name}（当前第${r.rank}名）涨幅异常！+${delta.toLocaleString()} 票，距第4名仅 ${Math.abs(gap).toLocaleString()} 票！`);
+        appendWatchAlert(r, delta, gap);
+      } else if (gap !== null) {
+        // Big surge but not immediately threatening
+        showToast(`⚠️ ${r.name}（第${r.rank}名）异常加速 +${delta.toLocaleString()} 票，需注意！`);
+      }
+    }
+  }
+}
+
+function appendWatchAlert(r, delta, gap) {
+  const msg = `⚡ 【冲榜预警】${r.name} 当前第${r.rank}名  10分钟涨 +${delta.toLocaleString()}票  距第4名仅 ${gap >= 0 ? "已超越" : Math.abs(gap).toLocaleString()+"票"}`;
+  notifyLines.unshift({ text: msg, tsStr: fmtCSTDate(getCSTDate()), isWarn: true });
+  refreshNotifyFeed();
+}
+
+// ════════════════════════════════════════════
+// 通知构建
+// ════════════════════════════════════════════
+function buildNotify(rows, watchRows, prevSnap, hourStartSnap, tsStr, isNewHour) {
+  const prev      = prevSnap      ? Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes])) : null;
+  const hourStart = hourStartSnap ? Object.fromEntries(hourStartSnap.rows.map(r=>[r.name,r.votes])) : null;
+  const range10   = prevSnap ? `${hm(prevSnap.ts)}→${hm(tsStr)}` : "首次";
+  const rangeHr   = hourStartSnap ? `${hm(hourStartSnap.ts)}→${hm(tsStr)}` : "本小时";
+
+  let lines = [`【乘风2026 投票播报】${tsStr}（北京时间）`, "─".repeat(36)];
+  let alerts = [];
+
+  for (const r of rows) {
+    const g10 = prev      ? r.votes - (prev[r.name]      ?? r.votes) : null;
+    const gHr = hourStart ? r.votes - (hourStart[r.name] ?? r.votes) : null;
+    const f10 = (g10 !== null && g10 >= ALERT_10MIN)  ? " 🚨超速!" : "";
+    const fHr = (gHr !== null && gHr >= ALERT_HOURLY) ? " 🚨爆量!" : "";
+    if (g10 !== null && gHr !== null) {
+      lines.push(`第${r.rank}名 ${r.name}  票数 ${r.votes.toLocaleString()}  |  ${range10} 涨 ${g10>=0?"+":""}${g10.toLocaleString()}${f10}  |  ${rangeHr} 小时累计 ${gHr>=0?"+":""}${gHr.toLocaleString()}${fHr}`);
+    } else {
+      lines.push(`第${r.rank}名 ${r.name}  票数 ${r.votes.toLocaleString()}  （首次记录）`);
+    }
+    if (f10) alerts.push(`⚠️ ${r.name} 10分钟涨 ${g10.toLocaleString()} 票！超预警线 ${ALERT_10MIN.toLocaleString()}`);
+    if (fHr) alerts.push(`⚠️ ${r.name} 小时累计 ${gHr.toLocaleString()} 票！超预警线 ${ALERT_HOURLY.toLocaleString()}`);
+  }
+  if (rows.length >= 3)
+    lines.push(`第2→3差：${(rows[0].votes-rows[1].votes).toLocaleString()} 票  │  第3→4差：${(rows[1].votes-rows[2].votes).toLocaleString()} 票`);
+  if (alerts.length) { lines.push("─".repeat(36)); lines = lines.concat(alerts); }
+  if (isNewHour) lines.push("🕐 整点跨越，已记录小时报告");
+  return lines.join("\n");
+}
+
+// ════════════════════════════════════════════
+// 按粒度构建播报（1分/5分/10分/小时）
+// ════════════════════════════════════════════
+function buildGranularNotifies(rows, prevSnap, hourStartSnap, tsStr, isNewHour) {
+  if (!prevSnap) return;
+
+  // Helper: find snap approximately N minutes before current
+  function snapNMinBefore(minutes) {
+    const cutMs = new Date(tsStr.replace(" ","T")+"Z").getTime() - minutes * 60 * 1000;
+    // find closest snap at or before cutoff
+    let best = null;
+    for (const s of allSnapshots) {
+      const sMs = new Date(s.ts.replace(" ","T")+"Z").getTime();
+      if (sMs <= cutMs) best = s;
+    }
+    return best;
+  }
+
+  function buildLines(rows, refSnap, rangeLabel, granTag) {
+    if (!refSnap) return;
+    const refMap = Object.fromEntries(refSnap.rows.map(r=>[r.name,r.votes]));
+    const lines = [`【${granTag} 涨幅播报】${tsStr.substring(11,16)}（北京时间）`, `区间：${hm(refSnap.ts)}→${hm(tsStr)}`,"─".repeat(28)];
+    let hasAlert = false;
+    for (const r of rows) {
+      const rv = refMap[r.name];
+      if (rv === undefined) continue;
+      const delta = r.votes - rv;
+      const f = (granTag==="10分钟"&&delta>=ALERT_10MIN)||(granTag==="1小时"&&delta>=ALERT_HOURLY) ? " 🚨" : "";
+      if (f) hasAlert = true;
+      lines.push(`#${r.rank} ${r.name}  ${r.votes.toLocaleString()}  涨 ${delta>=0?"+":""}${delta.toLocaleString()}${f}`);
+    }
+    if (rows.length>=3) lines.push(`2→3差：${(rows[0].votes-rows[1].votes).toLocaleString()}  3→4差：${(rows[1].votes-rows[2].votes).toLocaleString()}`);
+    return lines.join("\n");
+  }
+
+  // 1分钟: vs immediately previous snap
+  const snap1min = prevSnap;
+  const text1 = buildLines(rows, snap1min, "1分钟", "1分钟");
+  if (text1) notifyLines1min.unshift({ text:text1, tsStr });
+
+  // 5分钟: find snap ~5min ago
+  const snap5min = snapNMinBefore(5);
+  if (snap5min && snap5min.ts !== snap1min?.ts) {
+    const text5 = buildLines(rows, snap5min, "5分钟", "5分钟");
+    if (text5) notifyLines5min.unshift({ text:text5, tsStr });
+  } else if (snap5min) {
+    const text5 = buildLines(rows, snap5min, "5分钟", "5分钟");
+    if (text5) notifyLines5min.unshift({ text:text5, tsStr });
+  }
+
+  // 10分钟: find snap ~10min ago
+  const snap10min = snapNMinBefore(10);
+  if (snap10min) {
+    const text10 = buildLines(rows, snap10min, "10分钟", "10分钟");
+    if (text10) notifyLines10min.unshift({ text:text10, tsStr });
+  }
+
+  // 小时: only push on new hour or first of hour
+  if (isNewHour && hourStartSnap) {
+    const textHr = buildLines(rows, hourStartSnap, "1小时", "1小时");
+    if (textHr) notifyLinesHour.unshift({ text:textHr, tsStr });
+  }
+
+  // Trim all lists to 50 entries
+  [notifyLines1min,notifyLines5min,notifyLines10min,notifyLinesHour].forEach(l => { if(l.length>50) l.length=50; });
+  if (notifyTab !== "all") refreshNotifyFeed();
+}
+
+
+function renderSummaryBar(rows, tsStr) {
+  const bar = document.getElementById("summary-bar");
+  const grid = document.getElementById("summary-grid");
+  if (!rows || !rows.length) { bar.style.display = "none"; return; }
+  bar.style.display = "";
+
+  const windowMs = summaryWindow * 60 * 1000;
+  const cutoffTs = fmtCSTDate(new Date(Date.now() - windowMs + 8*3600*1000 - windowMs));
+  // find the snapshot closest to (now - window) for each person
+  const snapBefore = [...allSnapshots].reverse().find(s => s.ts <= cutoffTs) ||
+                     (allSnapshots.length > 1 ? allSnapshots[allSnapshots.length - 2] : null);
+
+  const prevMap = snapBefore ? Object.fromEntries(snapBefore.rows.map(r=>[r.name,r.votes])) : {};
+
+  grid.innerHTML = rows.map(r => {
+    const pv = prevMap[r.name];
+    const delta = pv !== undefined ? r.votes - pv : null;
+    const deltaStr = delta !== null ? `${delta>=0?"+":""}${delta.toLocaleString()}` : "—";
+    const cls = delta === null ? "neutral" : delta > 0 ? "pos" : delta < 0 ? "neg" : "neutral";
+    // rate per minute
+    let rateStr = "";
+    if (delta !== null && snapBefore) {
+      const dtMs = new Date(tsStr.replace(" ","T")+"Z").getTime() - new Date(snapBefore.ts.replace(" ","T")+"Z").getTime();
+      const mins = dtMs / 60000;
+      if (mins > 0) {
+        const perMin = Math.round(delta / mins);
+        rateStr = `${perMin>=0?"+":""}${perMin.toLocaleString()}/分`;
+      }
+    }
+    const isAlert = delta !== null && delta >= ALERT_10MIN * (summaryWindow / 10);
+    return `<div class="summary-card">
+      <div class="summary-card-left">
+        <span class="summary-card-rank"># ${r.rank}</span>
+        <span class="summary-card-name">${r.name}</span>
+        <span class="summary-card-votes">${r.votes.toLocaleString()} 票</span>
+      </div>
+      <div class="summary-card-right">
+        <span class="summary-delta-big ${cls}">${deltaStr}</span>
+        ${rateStr ? `<span class="summary-rate">${rateStr}</span>` : ""}
+        ${isAlert ? `<span class="summary-alert-tag">🚨 超速</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════
+// UI: cards
+// ════════════════════════════════════════════
+function renderCards(rows, prevSnap, hourStartSnap, tsStr) {
+  const prev      = prevSnap      ? Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes])) : null;
+  const hourStart = hourStartSnap ? Object.fromEntries(hourStartSnap.rows.map(r=>[r.name,r.votes])) : null;
+  const grid = document.getElementById("rank-grid");
+  grid.innerHTML = "";
+  for (const r of rows) {
+    const g10  = prev      ? r.votes - (prev[r.name]      ?? r.votes) : null;
+    const gHr  = hourStart ? r.votes - (hourStart[r.name] ?? r.votes) : null;
+    const alert10 = g10 !== null && g10 >= ALERT_10MIN;
+    const alertHr = gHr !== null && gHr >= ALERT_HOURLY;
+    const hasAlert = alert10 || alertHr;
+
+    const card = document.createElement("div");
+    card.className = "rank-card" + (hasAlert ? " alert" : "");
+
+    const g10Str = g10 !== null ? `${g10>=0?"+":""}${g10.toLocaleString()}` : "首次";
+    const g10Cls = g10 === null ? "neutral" : g10 > 0 ? "pos" : g10 < 0 ? "neg" : "neutral";
+    const gHrStr = gHr !== null ? `${gHr>=0?"+":""}${gHr.toLocaleString()}` : "—";
+    const gHrCls = gHr === null ? "neutral" : gHr > 0 ? "pos" : gHr < 0 ? "neg" : "neutral";
+
+    card.innerHTML = `
+      <span class="rank-badge"># ${r.rank}</span>
+      <div class="rank-name">${r.name}</div>
+      <div class="rank-votes">${r.votes.toLocaleString()}</div>
+      <div class="rank-deltas">
+        <div class="delta-row">
+          <span class="delta-label">10分钟涨幅</span>
+          <span class="delta-val ${g10Cls}">${g10Str}</span>
+        </div>
+        <div class="delta-row">
+          <span class="delta-label">小时累计</span>
+          <span class="delta-val ${gHrCls}">${gHrStr}</span>
+        </div>
+      </div>
+      ${alert10 ? `<div class="alert-badge">🚨 超速 ${g10.toLocaleString()}</div>` : ""}
+      ${alertHr ? `<div class="alert-badge">🚨 爆量 ${gHr.toLocaleString()}</div>` : ""}
+    `;
+    grid.appendChild(card);
+  }
+  document.getElementById("diff-row").style.display = "";
+}
+
+// ════════════════════════════════════════════
+// UI: watchlist 5-9
+// ════════════════════════════════════════════
+function renderWatchlist(watchRows, prevSnap) {
+  const bar   = document.getElementById("watchlist-bar");
+  const items = document.getElementById("watchlist-items");
+  if (!watchRows || !watchRows.length) { bar.style.display = "none"; return; }
+  bar.style.display = "";
+
+  const prevMap = prevSnap ? Object.fromEntries((prevSnap.watchRows||[]).map(r=>[r.name,r.votes])) : {};
+  items.innerHTML = watchRows.map(r => {
+    const delta = prevMap[r.name] !== undefined ? r.votes - prevMap[r.name] : null;
+    const isSurging = delta !== null && delta >= ALERT_WATCH_10MIN;
+    const deltaStr  = delta !== null ? `+${delta.toLocaleString()}` : "—";
+    return `<div class="watch-chip${isSurging?" surging":""}">
+      <span class="chip-name">${r.name}</span>
+      <span class="chip-rank">#${r.rank}</span>
+      <span class="chip-delta">${deltaStr}</span>
+    </div>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════
+// UI: diff row
+// ════════════════════════════════════════════
+function renderDiffRow(allRows) {
+  const sorted = [...allRows].sort((a,b)=>b.votes-a.votes);
+  const get = (n) => sorted[n-1];
+  const r2 = get(2), r3 = get(3), r4 = get(4), r5 = get(5);
+  document.getElementById("diff-23").textContent = r2 && r3 ? (r2.votes-r3.votes).toLocaleString()+" 票" : "—";
+  document.getElementById("diff-34").textContent = r3 && r4 ? (r3.votes-r4.votes).toLocaleString()+" 票" : "—";
+  document.getElementById("diff-45").textContent = r4 && r5 ? (r4.votes-r5.votes).toLocaleString()+" 票" : "—";
+
+  // recorded days
+  const allDays = [...new Set(allSnapshots.map(s=>s.ts.substring(0,10)))].sort();
+  document.getElementById("recorded-days").textContent = allDays.length ? `${allDays.length} 天` : "—";
+
+  const todayPrefix = fmtCSTDate(getCSTDate()).substring(0,10);
+  const todayFirst  = allSnapshots.find(s => s.ts.startsWith(todayPrefix));
+  document.getElementById("today-first").textContent = todayFirst ? hm(todayFirst.ts) : "—";
+
+  // populate history date filter
+  const sel = document.getElementById("history-date-filter");
+  const curVal = sel.value;
+  // rebuild options
+  sel.innerHTML = '<option value="all">全部日期</option><option value="today">今天</option>';
+  allDays.slice().reverse().forEach(d => {
+    if (d !== todayPrefix) {
+      const opt = document.createElement("option");
+      opt.value = d; opt.textContent = d;
+      sel.appendChild(opt);
+    }
+  });
+  // restore selection if still valid
+  if ([...sel.options].some(o=>o.value===curVal)) sel.value = curVal;
+  else sel.value = "today";
+}
+
+// ════════════════════════════════════════════
+// UI: daily summary panel
+// ════════════════════════════════════════════
+function getDailyStats() {
+  // group snapshots by date, then compute first/last votes per person per day
+  const dayMap = {};
+  for (const snap of allSnapshots) {
+    const d = snap.ts.substring(0,10);
+    if (!dayMap[d]) dayMap[d] = [];
+    dayMap[d].push(snap);
+  }
+  const days = Object.keys(dayMap).sort();
+  const result = []; // [{date, name, startVotes, endVotes, gain, count}]
+  for (const d of days) {
+    const snaps = dayMap[d].sort((a,b)=>a.ts.localeCompare(b.ts));
+    const first = snaps[0], last = snaps[snaps.length-1];
+    const names = [...new Set([...first.rows.map(r=>r.name), ...last.rows.map(r=>r.name)])];
+    const firstMap = Object.fromEntries(first.rows.map(r=>[r.name,{votes:r.votes,rank:r.rank}]));
+    const lastMap  = Object.fromEntries(last.rows.map(r=>[r.name,{votes:r.votes,rank:r.rank}]));
+    for (const nm of names) {
+      const sv = firstMap[nm]?.votes;
+      const ev = lastMap[nm]?.votes;
+      const rank = lastMap[nm]?.rank ?? firstMap[nm]?.rank;
+      if (sv !== undefined && ev !== undefined) {
+        result.push({ date:d, name:nm, rank, startVotes:sv, endVotes:ev, gain:ev-sv, count:snaps.length });
+      }
+    }
+  }
+  return result;
+}
+
+function renderDailyPanel() {
+  const stats = getDailyStats();
+  const title  = document.getElementById("daily-title");
+  const panel  = document.getElementById("daily-panel");
+  const tbody  = document.getElementById("daily-tbody");
+  const subtitle = document.getElementById("daily-subtitle");
+
+  if (!stats.length) { title.style.display="none"; panel.style.display="none"; return; }
+
+  const days = [...new Set(stats.map(s=>s.date))];
+  title.style.display="";
+  panel.style.display="";
+  subtitle.textContent = `${days.length} 天`;
+
+  let html = "";
+  for (const d of days.slice().reverse()) {
+    const rows = stats.filter(s=>s.date===d).sort((a,b)=>a.rank-b.rank);
+    rows.forEach((s, i) => {
+      const gainStr = `${s.gain>=0?"+":""}${s.gain.toLocaleString()}`;
+      const gainCls = s.gain>0?"td-pos":s.gain<0?"td-neg":"td-neutral";
+      html += `<tr>
+        ${i===0 ? `<td rowspan="${rows.length}" class="td-mono" style="vertical-align:middle;border-right:1px solid var(--border)"><span class="day-badge">${d}</span><br><span style="font-size:0.65rem;color:var(--text3)">${s.count}条记录</span></td>` : ""}
+        <td>#${s.rank} ${s.name}</td>
+        <td class="td-mono td-neutral">${s.startVotes.toLocaleString()}</td>
+        <td class="td-mono">${s.endVotes.toLocaleString()}</td>
+        <td class="td-mono ${gainCls}" style="font-weight:600">${gainStr}</td>
+        ${i===0 ? `<td rowspan="${rows.length}" class="td-mono td-neutral" style="vertical-align:middle;text-align:center">${s.count}</td>` : ""}
+      </tr>`;
+    });
+  }
+  tbody.innerHTML = html || "<tr><td colspan='6' style='text-align:center;color:var(--text3);padding:16px'>暂无数据</td></tr>";
+}
+
+// ════════════════════════════════════════════
+// UI: history table (with date filter)
+// ════════════════════════════════════════════
+function renderHistoryTable() {
+  const wrap = document.getElementById("history-wrap");
+  const count = document.getElementById("history-count");
+  const filterVal = document.getElementById("history-date-filter")?.value || "all";
+  const todayPrefix = fmtCSTDate(getCSTDate()).substring(0,10);
+  const datePrefix = filterVal === "today" ? todayPrefix : filterVal === "all" ? null : filterVal;
+
+  let filtered = allSnapshots;
+  if (datePrefix) filtered = allSnapshots.filter(s => s.ts.startsWith(datePrefix));
+
+  const recent = filtered.slice(-60).reverse(); // show up to 60 rows per day
+  count.textContent = `共 ${allSnapshots.length} 条 · 显示 ${filtered.length} 条`;
+  if (!recent.length) { wrap.innerHTML = '<div class="empty-state"><p>该日期暂无记录</p></div>'; return; }
+
+  let html = `<table class="history-table"><thead><tr>
+    <th>时间(北京)</th><th>姓名</th><th>排名</th><th>票数</th><th>间隔涨幅</th><th>小时涨幅</th><th>预警</th>
+  </tr></thead><tbody>`;
+
+  for (const snap of recent) {
+    const prevSnap = allSnapshots.find(s => s.ts === snap.prevTs);
+    const hourSnap = allSnapshots.find(s => s.ts === snap.hourStartTs);
+    const prev      = prevSnap ? Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes])) : null;
+    const hourStart = hourSnap ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
+
+    for (const r of snap.rows) {
+      const g10  = prev      ? r.votes-(prev[r.name]??r.votes) : null;
+      const gHr  = hourStart ? r.votes-(hourStart[r.name]??r.votes) : null;
+      const g10Str = g10 !== null ? `${g10>=0?"+":""}${g10.toLocaleString()}` : "首次";
+      const gHrStr = gHr !== null ? `${gHr>=0?"+":""}${gHr.toLocaleString()}` : "—";
+      const g10Cls = g10===null?"td-neutral":g10>0?"td-pos":g10<0?"td-neg":"";
+      const gHrCls = gHr===null?"td-neutral":gHr>0?"td-pos":gHr<0?"td-neg":"";
+      const alerts = [];
+      if (g10!==null && g10>=ALERT_10MIN)  alerts.push('<span class="td-alert">超速</span>');
+      if (gHr!==null && gHr>=ALERT_HOURLY) alerts.push('<span class="td-alert">爆量</span>');
+      html += `<tr>
+        <td class="td-mono">${snap.ts.substring(5,16)}</td>
+        <td>${r.name}</td>
+        <td class="td-neutral td-mono">${r.rank}</td>
+        <td class="td-mono">${r.votes.toLocaleString()}</td>
+        <td class="td-mono ${g10Cls}">${g10Str}</td>
+        <td class="td-mono ${gHrCls}">${gHrStr}</td>
+        <td>${alerts.join(" ")}</td>
+      </tr>`;
+    }
+  }
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+}
+
+// ════════════════════════════════════════════
+// Notify feed
+// ════════════════════════════════════════════
+function setNotifyTab(tab) {
+  notifyTab = tab;
+  ["all","1min","5min","10min","hour"].forEach(t => {
+    const el = document.getElementById("notify-tab-"+t);
+    if (el) el.classList.toggle("active", t === tab);
+  });
+  refreshNotifyFeed();
+}
+
+function prependNotify(text, tsStr, granTag) {
+  // granTag: "1min" | "5min" | "10min" | "hour" | undefined (= all)
+  const entry = { text, tsStr };
+  notifyLines.unshift(entry);
+  if (granTag === "1min")  notifyLines1min.unshift(entry);
+  if (granTag === "5min")  notifyLines5min.unshift(entry);
+  if (granTag === "10min") notifyLines10min.unshift(entry);
+  if (granTag === "hour")  notifyLinesHour.unshift(entry);
+  if (!granTag) { notifyLines1min.unshift(entry); notifyLines5min.unshift(entry); notifyLines10min.unshift(entry); }
+  refreshNotifyFeed();
+}
+function appendNotifyError(msg) {
+  const entry = { text:`❌ 抓取失败：${msg}`, tsStr:fmtCSTDate(getCSTDate()), isErr:true };
+  notifyLines.unshift(entry);
+  refreshNotifyFeed();
+}
+function refreshNotifyFeed() {
+  const feed = document.getElementById("notify-feed");
+  const list = notifyTab === "all"   ? notifyLines
+             : notifyTab === "1min"  ? notifyLines1min
+             : notifyTab === "5min"  ? notifyLines5min
+             : notifyTab === "10min" ? notifyLines10min
+             :                        notifyLinesHour;
+  if (!list.length) {
+    feed.innerHTML = '<div class="empty-state" style="padding:20px 0"><p>暂无播报记录</p></div>';
+    return;
+  }
+  feed.innerHTML = list.slice(0,20).map(entry => {
+    const lines = entry.text.split("\n");
+    const rendered = lines.map(l => {
+      if (l.startsWith("─")||l.startsWith("═")) return `<span class="nf-sep">${l}</span>`;
+      if (l.includes("🚨")) return `<span class="nf-alert">${l}</span>`;
+      if (l.includes("⚡")) return `<span class="nf-warn">${l}</span>`;
+      if (l.startsWith("【")) return `<span class="nf-info">${l}</span>`;
+      if (l.startsWith("🕐")) return `<span class="nf-info">${l}</span>`;
+      if (l.startsWith("❌")) return `<span class="nf-alert">${l}</span>`;
+      return l;
+    }).join("<br>");
+    return `<div class="notify-entry">${rendered}</div>`;
+  }).join("");
+  feed.scrollTop = 0;
+}
+
+// ════════════════════════════════════════════
+// Countdown
+// ════════════════════════════════════════════
+function startCountdown() {
+  nextFetchAt = Date.now() + INTERVAL_MS;
+  if (countdownId) clearInterval(countdownId);
+  countdownId = setInterval(() => {
+    const remaining = Math.max(0, nextFetchAt - Date.now());
+    const mins = String(Math.floor(remaining/60000)).padStart(2,'0');
+    const secs = String(Math.floor((remaining%60000)/1000)).padStart(2,'0');
+    document.getElementById("countdown-timer").textContent = `${mins}:${secs}`;
+    const pct = ((INTERVAL_MS-remaining)/INTERVAL_MS*100).toFixed(1);
+    document.getElementById("progress-fill").style.width = pct+"%";
+  },1000);
+}
+
+function setStatus(type, text) {
+  const pill = document.getElementById("status-pill");
+  pill.className = "status-pill "+type;
+  document.getElementById("status-text").textContent = text;
+}
+
+async function startTracking() {
+  INTERVAL_MS = parseInt(document.getElementById("interval-select").value);
+  running = true;
+  document.getElementById("btn-toggle").textContent = "暂停";
+  setStatus("running","追踪中");
+  await doFetch();
+  startCountdown();
+  timerId = setInterval(async() => {
+    if (!running) return;
+    await doFetch();
+    startCountdown();
+  }, INTERVAL_MS);
+}
+
+function stopTracking() {
+  running = false;
+  if (timerId) { clearInterval(timerId); timerId=null; }
+  if (countdownId) { clearInterval(countdownId); countdownId=null; }
+  document.getElementById("btn-toggle").textContent = "启动";
+  document.getElementById("countdown-timer").textContent = "—";
+  document.getElementById("progress-fill").style.width = "0%";
+  setStatus("paused","已暂停");
+}
+
+// ════════════════════════════════════════════
+// Export CSV
+// ════════════════════════════════════════════
+function csvEscape(v) {
+  const s = String(v);
+  return s.includes(",")||s.includes('"')||s.includes("\n") ? `"${s.replace(/"/g,'""')}"` : s;
+}
+function makeCSV(headers,rows) {
+  return [headers,...rows].map(r=>r.map(csvEscape).join(",")).join("\n");
+}
+
+function exportCSV(type) {
+  let content = "";
+  const now = fmtCSTDate(getCSTDate()).replace(/[: ]/g,"-");
+
+  if (type==="raw") {
+    const headers = ["时间(北京)","排名","姓名","夯爆了票数"];
+    const rows=[];
+    for (const snap of allSnapshots)
+      for (const r of snap.rows)
+        rows.push([snap.ts,r.rank,r.name,r.votes]);
+    content = makeCSV(headers,rows);
+  } else if (type==="live") {
+    const headers = ["时间(北京)","姓名","排名","当前票数","10分钟涨幅","10分钟区间","小时累计涨幅","小时区间","10min预警","小时预警"];
+    const rows=[];
+    for (const snap of allSnapshots) {
+      const prevSnap = allSnapshots.find(s=>s.ts===snap.prevTs);
+      const hourSnap = allSnapshots.find(s=>s.ts===snap.hourStartTs);
+      const prev      = prevSnap ? Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes])) : null;
+      const hourStart = hourSnap ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
+      const range10 = prevSnap ? `${hm(prevSnap.ts)}→${hm(snap.ts)}` : "首次";
+      const rangeHr = hourSnap ? `${hm(hourSnap.ts)}→${hm(snap.ts)}` : "—";
+      for (const r of snap.rows) {
+        const g10 = prev      ? r.votes-(prev[r.name]??r.votes) : "—";
+        const gHr = hourStart ? r.votes-(hourStart[r.name]??r.votes) : "—";
+        rows.push([snap.ts,r.name,r.rank,r.votes,g10,range10,gHr,rangeHr,
+          typeof g10==="number"&&g10>=ALERT_10MIN?"🚨超速":"",
+          typeof gHr==="number"&&gHr>=ALERT_HOURLY?"🚨爆量":""]);
+      }
+    }
+    content = makeCSV(headers,rows);
+  } else if (type==="live5") {
+    // 5-minute bucketed flow: one row per 5-min bucket per person (last snap in bucket)
+    const bucketMap = {};
+    for (const snap of allSnapshots) {
+      const m = snap.ts.substring(14,16);
+      const bucket = snap.ts.substring(0,14) + String(Math.floor(parseInt(m)/5)*5).padStart(2,'0');
+      bucketMap[bucket] = snap;
+    }
+    const bucketSnaps = Object.values(bucketMap).sort((a,b)=>a.ts.localeCompare(b.ts));
+    const headers5 = ["时间(北京)","姓名","排名","当前票数","5分钟涨幅","5分钟区间","小时累计涨幅","小时区间","预警"];
+    const rows5=[];
+    for (let i=0; i<bucketSnaps.length; i++) {
+      const snap = bucketSnaps[i];
+      const prev5 = i>0 ? bucketSnaps[i-1] : null;
+      const hourSnap = allSnapshots.find(s=>s.ts===snap.hourStartTs);
+      const prev5Map = prev5 ? Object.fromEntries(prev5.rows.map(r=>[r.name,r.votes])) : null;
+      const hourStart = hourSnap ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
+      const range5 = prev5 ? `${hm(prev5.ts)}→${hm(snap.ts)}` : "首次";
+      const rangeHr = hourSnap ? `${hm(hourSnap.ts)}→${hm(snap.ts)}` : "—";
+      for (const r of snap.rows) {
+        const g5  = prev5Map  ? r.votes-(prev5Map[r.name]??r.votes) : "—";
+        const gHr = hourStart ? r.votes-(hourStart[r.name]??r.votes) : "—";
+        rows5.push([snap.ts,r.name,r.rank,r.votes,g5,range5,gHr,rangeHr,
+          typeof g5==="number"&&g5>=ALERT_10MIN*0.5?"⚠️快速":"",
+        ]);
+      }
+    }
+    content = makeCSV(headers5, rows5);
+  } else if (type==="daily") {
+    const stats = getDailyStats();
+    const headers = ["日期","排名","姓名","当日起始票数","当日结束票数","当日总涨幅","记录条数"];
+    const rows = stats.map(s=>[s.date,s.rank,s.name,s.startVotes,s.endVotes,s.gain,s.count]);
+    content = makeCSV(headers, rows);
+  } else if (type==="hourly") {
+    const headers=["时间(北京)","排名","姓名","夯爆了票数","小时涨幅","⚠️小时预警"];
+    const rows=[];
+    for (let i=1;i<allSnapshots.length;i++) {
+      const cur=allSnapshots[i], prv=allSnapshots[i-1];
+      if (cur.ts.substring(0,13)!==prv.ts.substring(0,13)) {
+        const hourSnap=allSnapshots.find(s=>s.ts===prv.ts);
+        for (const r of cur.rows) {
+          const h0=hourSnap?(Object.fromEntries(hourSnap.rows.map(x=>[x.name,x.votes]))[r.name]??r.votes):r.votes;
+          const hg=r.votes-h0;
+          rows.push([cur.ts,r.rank,r.name,r.votes,hg,hg>=ALERT_HOURLY?"🚨爆量":""]);
+        }
+      }
+    }
+    content = makeCSV(headers,rows);
+  } else if (type==="notify") {
+    content = notifyLines.map(e=>e.text).join("\n\n")+"\n";
+    const fn=`乘风2026_文字通知_${now}.txt`;
+    saveViaProxy(`Data/${fn}`,"\uFEFF"+content,false).then(saved=>{
+      if(!saved){const blob=new Blob(["\uFEFF"+content],{type:"text/plain;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fn;a.click();}
+    });
+    return;
+  }
+
+  const lbl=type==="raw"?"原始数据":type==="live"?"实时流水":type==="live5"?"5分钟流水":type==="daily"?"日报汇总":"每小时报告";
+  const fn=`乘风2026_${lbl}_${now}.csv`;
+  saveViaProxy(`Data/${fn}`,"\uFEFF"+content,false).then(saved=>{
+    if(!saved){const blob=new Blob(["\uFEFF"+content],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fn;a.click();}
+  });
+}
+
+function exportChartImage(canvasId, label) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const legendEl = document.getElementById(canvasId === "canvas-trend" ? "legend-trend" : "legend-delta");
+  const legendItems = [];
+  if (legendEl) {
+    legendEl.querySelectorAll(".legend-item").forEach(item => {
+      const dot = item.querySelector(".legend-dot, .legend-rect");
+      const text = item.textContent.trim();
+      if (dot && text && !text.includes("个数据点")) {
+        legendItems.push({ color: dot.style.background, text, isRect: dot.classList.contains("legend-rect") });
+      }
+    });
+  }
+
+  const EXPORT_SCALE = 4;
+  const srcDpr = window.devicePixelRatio || 1;
+  const cssW = parseInt(canvas.style.width)  || canvas.width  / srcDpr;
+  const cssH = 280; // fixed height matching CSS
+  const LEGEND_PAD = legendItems.length ? 56 : 0;
+  const outW = cssW * EXPORT_SCALE;
+  const outH = (cssH + LEGEND_PAD) * EXPORT_SCALE;
+
+  const tmp = document.createElement("canvas");
+  tmp.width = outW; tmp.height = outH;
+  const ctx2 = tmp.getContext("2d");
+
+  ctx2.fillStyle = "#ffffff";
+  ctx2.fillRect(0, 0, outW, outH);
+  ctx2.drawImage(canvas, 0, 0, outW, cssH * EXPORT_SCALE);
+
+  if (legendItems.length) {
+    const sc = EXPORT_SCALE;
+    const baseY = cssH * sc + 18 * sc;
+    let x = 60 * sc;
+    ctx2.textBaseline = "middle";
+    ctx2.font = `${15 * sc}px 'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
+    legendItems.forEach(item => {
+      const sz = 12 * sc;
+      ctx2.fillStyle = item.color;
+      if (item.isRect) {
+        ctx2.beginPath();
+        if (ctx2.roundRect) ctx2.roundRect(x, baseY - sz/2, sz, sz, 2*sc);
+        else ctx2.rect(x, baseY - sz/2, sz, sz);
+        ctx2.fill();
+      } else {
+        ctx2.beginPath();
+        ctx2.arc(x + sz/2, baseY, sz/2, 0, Math.PI*2);
+        ctx2.fill();
+      }
+      ctx2.fillStyle = "#4a4a6a";
+      ctx2.fillText(item.text, x + sz + 6*sc, baseY);
+      x += ctx2.measureText(item.text).width + 28*sc;
+    });
+    const gran = granularity === "1min" ? "1分钟粒度" : granularity === "5min" ? "5分钟粒度" : granularity === "10min" ? "10分钟粒度" : "整小时粒度";
+    ctx2.fillStyle = "#8888aa";
+    ctx2.textAlign = "right";
+    ctx2.fillText(gran, outW - 20*sc, baseY);
+    ctx2.textAlign = "left";
+  }
+
+  const a = document.createElement("a");
+  const now = fmtCSTDate(getCSTDate()).replace(/[: ]/g,"-");
+  const fileName = `乘风2026_${label}_${now}.png`;
+  const dataURL = tmp.toDataURL("image/png");
+  const b64 = dataURL.split(",")[1];
+  saveViaProxy(`Fig/${fileName}`, b64, true).then(saved => {
+    if (!saved) { a.download = fileName; a.href = dataURL; a.click(); }
+  });
+}
+
+async function saveViaProxy(relPath, content, isBinary) {
+  // 线上版直接走浏览器下载
+  return false;
+}
+
+function exportAll() {
+  ["raw","live","live5","hourly","daily","notify"].forEach((t,i)=>setTimeout(()=>exportCSV(t),i*300));
+}
+
+// ════════════════════════════════════════════
+// Chart helpers
+// ════════════════════════════════════════════
+// Chart colors: 张月=blue, 陈瑶=pink, others varied
+const CHART_COLORS_DEFAULT = ["#1a5fa8","#e8427a","#1a9e6a","#d07020","#7c5cbf","#0a8fa0","#c04060"];
+const CHART_COLORS_DIM     = ["rgba(26,95,168,0.1)","rgba(232,66,122,0.1)","rgba(26,158,106,0.1)"];
+
+function getChartColors(names) {
+  return names.map((n,i) => {
+    if (n.includes("张月")) return "#1a5fa8";
+    if (n.includes("陈瑶")) return "#e8427a";
+    // pick from remaining palette, skip blue/pink
+    const others = ["#1a9e6a","#d07020","#7c5cbf","#0a8fa0","#c04060","#8b6914","#206090"];
+    let oi = 0;
+    for (let j=0;j<i;j++) { if (!names[j].includes("张月")&&!names[j].includes("陈瑶")) oi++; }
+    return others[oi % others.length];
+  });
+}
+function getChartColorsDim(names) {
+  return getChartColors(names).map(c => {
+    // convert hex to rgba with 0.1 alpha
+    const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16);
+    return `rgba(${r},${g},${b},0.1)`;
+  });
+}
+
+// Cached chart width — set once from chart-section, reused by all canvas setups
+let _chartW = 0;
+function getChartWidth() {
+  const section = document.getElementById("chart-section");
+  if (section) {
+    const w = section.getBoundingClientRect().width - 32; // 16px padding each side
+    if (w > 0) { _chartW = w; return w; }
+  }
+  return _chartW || 600;
+}
+
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio||1;
+  const w = getChartWidth();
+  const h = 280; // fixed — matches .chart-canvas-wrap height in CSS
+  canvas.width  = w*dpr; canvas.height = h*dpr;
+  canvas.style.width = w+"px";
+  // height is controlled entirely by CSS (height:280px !important) — do NOT set style.height
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr,dpr);
+  return {ctx,w,h};
+}
+
+function drawGrid(ctx, left, top, right, bottom, steps, color) {
+  ctx.strokeStyle=color; ctx.lineWidth=1;
+  for (let i=0;i<=steps;i++) {
+    const y=top+(bottom-top)*i/steps;
+    ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(right,y); ctx.stroke();
+  }
+}
+
+function drawYLabels(ctx, left, top, bottom, minV, maxV, steps, color, fmt) {
+  ctx.fillStyle=color; ctx.font="12px 'Courier New',monospace"; ctx.textAlign="right";
+  for (let i=0;i<=steps;i++) {
+    const v=minV+(maxV-minV)*(1-i/steps);
+    const y=top+(bottom-top)*i/steps;
+    ctx.fillText(fmt(v), left-6, y+4);
+  }
+}
+
+function drawXLabels(ctx, labels, left, bottom, right, color) {
+  ctx.fillStyle=color; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
+  const step=Math.max(1,Math.floor(labels.length/8));
+  for (let i=0;i<labels.length;i+=step) {
+    const x=left+(right-left)*i/(labels.length-1||1);
+    ctx.fillText(labels[i], x, bottom+16);
+  }
+}
+
+function fmtNum(v) {
+  if (Math.abs(v)>=10000) return (v/10000).toFixed(1)+"万";
+  return v.toLocaleString();
+}
+
+// ════════════════════════════════════════════
+// Data aggregation by granularity
+// ════════════════════════════════════════════
+function getFilteredSnapshots() {
+  if (granularity === "hour") {
+    const hourMap = {};
+    for (const snap of allSnapshots) {
+      const hk = snap.ts.substring(0,13);
+      hourMap[hk] = snap;
+    }
+    return Object.values(hourMap).sort((a,b)=>a.ts.localeCompare(b.ts));
+  }
+  if (granularity === "10min") {
+    // keep one snap per 10-minute bucket
+    const map = {};
+    for (const snap of allSnapshots) {
+      const h = snap.ts.substring(11,13);
+      const m = snap.ts.substring(14,16);
+      const bucket = snap.ts.substring(0,14) + String(Math.floor(parseInt(m)/10)*10).padStart(2,'0');
+      map[bucket] = snap;
+    }
+    return Object.values(map).sort((a,b)=>a.ts.localeCompare(b.ts));
+  }
+  if (granularity === "5min") {
+    const map = {};
+    for (const snap of allSnapshots) {
+      const m = snap.ts.substring(14,16);
+      const bucket = snap.ts.substring(0,14) + String(Math.floor(parseInt(m)/5)*5).padStart(2,'0');
+      map[bucket] = snap;
+    }
+    return Object.values(map).sort((a,b)=>a.ts.localeCompare(b.ts));
+  }
+  // "1min" — return all
+  return allSnapshots;
+}
+
+// ════════════════════════════════════════════
+// Trend chart: bar OR line
+// ════════════════════════════════════════════
+function renderTrendChart() {
+  const snaps = getFilteredSnapshots();
+  if (snaps.length < 2) { showChartEmpty("canvas-trend","legend-trend","数据不足"); return; }
+  const canvas = document.getElementById("canvas-trend");
+  const {ctx,w,h} = setupCanvas(canvas);
+
+  const pad = {l:60,r:20,t:20,b:28};
+  const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
+
+  const names = snaps[snaps.length-1].rows.map(r=>r.name);
+  const seriesMap = {};
+  names.forEach(n=>{ seriesMap[n]=[]; });
+  const labels=[];
+  for (const snap of snaps) {
+    labels.push(hm(snap.ts));
+    for (const r of snap.rows) {
+      if (seriesMap[r.name]!==undefined) seriesMap[r.name].push(r.votes);
+    }
+  }
+
+  const allVals = Object.values(seriesMap).flat();
+  const minV=Math.min(...allVals), maxV=Math.max(...allVals);
+  const range=maxV-minV||1;
+  const lo=minV-range*0.08, hi=maxV+range*0.08;
+
+  ctx.clearRect(0,0,w,h);
+  drawGrid(ctx,left,top,right,bottom,5,"rgba(200,205,220,0.7)");
+  drawYLabels(ctx,left,top,bottom,lo,hi,5,"#8888aa",fmtNum);
+  if (labels.length>1) drawXLabels(ctx,labels,left,bottom,right,"#8888aa");
+
+  const n = snaps.length;
+  const groupW = (right-left) / (n || 1);
+  const barW = Math.max(2, Math.min(groupW / names.length - 2, 20));
+  const colors = getChartColors(names);
+  const dimColors = getChartColorsDim(names);
+
+  if (trendMode === "bar") {
+    names.forEach((name,ni) => {
+      const series = seriesMap[name];
+      series.forEach((v,i) => {
+        const cx = left + groupW*i + groupW/2 + (ni-(names.length-1)/2)*(barW+2);
+        const barH = Math.abs((bottom-top)*((v-lo)/(hi-lo)));
+        const y = bottom - barH;
+        ctx.fillStyle = colors[ni];
+        ctx.globalAlpha = 0.82;
+        ctx.fillRect(cx-barW/2, y, barW, Math.max(barH,1));
+        ctx.globalAlpha = 1;
+      });
+    });
+  } else {
+    // line mode
+    names.forEach((name,ni) => {
+      const series = seriesMap[name];
+      if (!series.length) return;
+      const color = colors[ni];
+      const pts = series.map((v,i) => ({
+        x: left+(right-left)*i/(series.length-1||1),
+        y: top+(bottom-top)*(1-(v-lo)/(hi-lo))
+      }));
+      // fill area
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x,bottom);
+      pts.forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.lineTo(pts[pts.length-1].x,bottom);
+      ctx.closePath();
+      ctx.fillStyle = dimColors[ni]||"rgba(100,100,200,0.05)";
+      ctx.fill();
+      // smooth line
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+      for (let i=1;i<pts.length;i++) {
+        const mx=(pts[i-1].x+pts[i].x)/2;
+        ctx.bezierCurveTo(mx,pts[i-1].y,mx,pts[i].y,pts[i].x,pts[i].y);
+      }
+      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+      // last dot
+      const lp=pts[pts.length-1];
+      ctx.beginPath(); ctx.arc(lp.x,lp.y,4,0,Math.PI*2);
+      ctx.fillStyle=color; ctx.fill();
+    });
+  }
+
+  const leg=document.getElementById("legend-trend");
+  const trendColors=getChartColors(names);
+  leg.innerHTML=names.map((n,i)=>
+    `<div class="legend-item">
+      <div class="${trendMode==='bar'?'legend-rect':'legend-dot'}" style="background:${trendColors[i]}"></div>${n}
+    </div>`
+  ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${snaps.length} 个数据点</div>`;
+}
+
+// ════════════════════════════════════════════
+// Delta chart: bar OR line
+// ════════════════════════════════════════════
+function renderDeltaChart() {
+  const snaps = getFilteredSnapshots();
+  if (snaps.length < 2) { showChartEmpty("canvas-delta","legend-delta","数据不足"); return; }
+  const canvas=document.getElementById("canvas-delta");
+  const {ctx,w,h}=setupCanvas(canvas);
+
+  const names=snaps[snaps.length-1].rows.map(r=>r.name);
+  const labels=[];
+  const seriesMap={};
+  names.forEach(n=>{ seriesMap[n]=[]; });
+
+  for (let i=1;i<snaps.length;i++) {
+    const snap=snaps[i];
+    labels.push(hm(snap.ts));
+    if (granularity==="10min") {
+      // delta from previous snap
+      const prevSnap=snaps[i-1];
+      const prevMap=Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes]));
+      for (const r of snap.rows) {
+        if (seriesMap[r.name]!==undefined)
+          seriesMap[r.name].push(prevMap[r.name]!==undefined ? r.votes-prevMap[r.name] : null);
+      }
+    } else {
+      // hour mode: delta from start of that hour
+      const hk=snap.ts.substring(0,13);
+      const hourSnap=allSnapshots.find(s=>s.ts.startsWith(hk)) || snaps[i-1];
+      const hourMap=Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes]));
+      for (const r of snap.rows) {
+        if (seriesMap[r.name]!==undefined)
+          seriesMap[r.name].push(hourMap[r.name]!==undefined ? r.votes-hourMap[r.name] : null);
+      }
+    }
+  }
+
+  const allVals=Object.values(seriesMap).flat().filter(v=>v!==null);
+  if (!allVals.length) { showChartEmpty("canvas-delta","legend-delta","暂无涨幅数据"); return; }
+  const maxV=Math.max(...allVals,0), minV=Math.min(...allVals,0);
+
+  const pad={l:72,r:20,t:24,b:32};
+  const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
+  const n=labels.length;
+  const groupW=(right-left)/(n||1);
+  const barW=Math.max(2,Math.min(groupW/names.length-2,18));
+
+  // Smart Y-axis with nice round ticks
+  function niceRange(lo0, hi0) {
+    const rawRange = hi0 - lo0 || 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(rawRange)) - 1);
+    const step = Math.ceil(rawRange / (5 * mag)) * mag;
+    let lo = Math.floor(lo0 / step) * step;
+    let hi = Math.ceil(hi0 / step) * step;
+    if (minV >= 0 && lo < 0) lo = 0;
+    return { lo, hi, step };
+  }
+  const { lo, hi, step } = niceRange(minV - (maxV - minV) * 0.08, maxV + (maxV - minV) * 0.18 + 1);
+  const ticks = [];
+  for (let v = lo; v <= hi + step * 0.001; v += step) ticks.push(Math.round(v));
+
+  const zeroY=top+(bottom-top)*(1-(0-lo)/(hi-lo));
+  const alertThresh=granularity==="10min"?ALERT_10MIN:ALERT_HOURLY;
+  const deltaColors = getChartColors(names);
+
+  ctx.clearRect(0,0,w,h);
+
+  // Grid at ticks
+  ctx.strokeStyle="rgba(200,205,220,0.7)"; ctx.lineWidth=1;
+  ticks.forEach(v => {
+    const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
+    if (y>=top&&y<=bottom) { ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(right,y); ctx.stroke(); }
+  });
+
+  // Y labels
+  ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="right";
+  ticks.forEach(v => {
+    const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
+    if (y>=top-2&&y<=bottom+2) ctx.fillText((v>=0?"+":"")+fmtNum(v), left-6, y+4);
+  });
+
+  // X labels
+  if (labels.length>1) drawXLabels(ctx,labels,left,bottom,right,"#8888aa");
+
+  // zero line
+  ctx.strokeStyle="rgba(100,100,150,0.35)"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(left,zeroY); ctx.lineTo(right,zeroY); ctx.stroke();
+
+  // alert line
+  const alertY=top+(bottom-top)*(1-(alertThresh-lo)/(hi-lo));
+  if (alertY>top&&alertY<bottom) {
+    ctx.strokeStyle="rgba(217,48,80,0.45)"; ctx.setLineDash([4,4]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(left,alertY); ctx.lineTo(right,alertY); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle="rgba(217,48,80,0.65)";
+    ctx.font="10px monospace"; ctx.textAlign="left";
+    ctx.fillText("预警线",left+4,alertY-4);
+  }
+
+  if (deltaMode==="bar") {
+    names.forEach((name,ni)=>{
+      const series=seriesMap[name];
+      series.forEach((v,i)=>{
+        if (v===null) return;
+        const cx=left+groupW*i+groupW/2+(ni-(names.length-1)/2)*(barW+2);
+        const barH=Math.abs((bottom-top)*((v-0)/(hi-lo)));
+        const y=v>=0?zeroY-barH:zeroY;
+        ctx.fillStyle=deltaColors[ni];
+        ctx.globalAlpha=v>=alertThresh?1:0.72;
+        ctx.fillRect(cx-barW/2,y,barW,Math.max(barH,1));
+        ctx.globalAlpha=1;
+      });
+    });
+  } else {
+    // line
+    names.forEach((name,ni)=>{
+      const series=seriesMap[name];
+      const pts=[];
+      series.forEach((v,i)=>{ if(v!==null) pts.push({x:left+groupW*(i+0.5),y:top+(bottom-top)*(1-(v-lo)/(hi-lo))}); });
+      if (pts.length<2) return;
+      // fill area under line
+      const dimColor=getChartColorsDim(names)[ni];
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x,zeroY);
+      pts.forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.lineTo(pts[pts.length-1].x,zeroY);
+      ctx.closePath();
+      ctx.fillStyle=dimColor; ctx.fill();
+      // smooth line
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+      for (let i=1;i<pts.length;i++) {
+        const mx=(pts[i-1].x+pts[i].x)/2;
+        ctx.bezierCurveTo(mx,pts[i-1].y,mx,pts[i].y,pts[i].x,pts[i].y);
+      }
+      ctx.strokeStyle=deltaColors[ni]; ctx.lineWidth=2; ctx.globalAlpha=0.9; ctx.stroke();
+      ctx.globalAlpha=1;
+      // dots
+      pts.forEach(p=>{
+        ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2);
+        ctx.fillStyle="#fff"; ctx.fill();
+        ctx.strokeStyle=deltaColors[ni]; ctx.lineWidth=1.5; ctx.stroke();
+      });
+    });
+  }
+
+  const leg=document.getElementById("legend-delta");
+  leg.innerHTML=names.map((nm,i)=>
+    `<div class="legend-item">
+      <div class="${deltaMode==='line'?'legend-dot':'legend-rect'}" style="background:${deltaColors[i]}"></div>${nm}
+    </div>`
+  ).join("")+
+  `<div class="legend-item" style="margin-left:auto;color:var(--text3)">${n} 个数据点 · ${granularity==="10min"?"10分钟粒度":granularity==="5min"?"5分钟粒度":granularity==="1min"?"1分钟粒度":"整小时粒度"}</div>`;
+}
+
+// ════════════════════════════════════════════
+// Daily chart: bar (per-day gain) OR line (cross-day trend)
+// ════════════════════════════════════════════
+function renderDailyChart() {
+  const canvas = document.getElementById("canvas-daily");
+  const leg = document.getElementById("legend-daily");
+  const stats = getDailyStats();
+  if (!stats.length) { showChartEmpty("canvas-daily","legend-daily","暂无每日数据"); return; }
+
+  const {ctx,w,h} = setupCanvas(canvas);
+  const pad = {l:72,r:20,t:24,b:32};
+  const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
+
+  // Get unique days sorted
+  const days = [...new Set(stats.map(s=>s.date))].sort();
+  // Get unique names
+  const names = [...new Set(stats.map(s=>s.name))];
+  const colors = getChartColors(names);
+  const dimColors = getChartColorsDim(names);
+
+  if (dailyChartMode === "bar") {
+    // Bar chart: each day's total gain per person
+    const seriesMap = {};
+    names.forEach(n => { seriesMap[n] = []; });
+    for (const d of days) {
+      for (const nm of names) {
+        const row = stats.find(s => s.date===d && s.name===nm);
+        seriesMap[nm].push(row ? row.gain : 0);
+      }
+    }
+
+    const allVals = Object.values(seriesMap).flat();
+    const maxV = Math.max(...allVals, 0);
+    const minV = Math.min(...allVals, 0);
+
+    function niceRange(lo0,hi0) {
+      const rawRange=hi0-lo0||1;
+      const mag=Math.pow(10,Math.floor(Math.log10(rawRange))-1);
+      const step=Math.ceil(rawRange/(5*mag))*mag;
+      let lo=Math.floor(lo0/step)*step;
+      let hi=Math.ceil(hi0/step)*step;
+      if (minV>=0&&lo<0) lo=0;
+      return {lo,hi,step};
+    }
+    const {lo,hi,step} = niceRange(minV-(maxV-minV)*0.05, maxV+(maxV-minV)*0.18+1);
+    const ticks=[]; for(let v=lo;v<=hi+step*0.001;v+=step) ticks.push(Math.round(v));
+
+    const zeroY = top+(bottom-top)*(1-(0-lo)/(hi-lo));
+    const n = days.length;
+    const groupW = (right-left)/(n||1);
+    const barW = Math.max(3, Math.min(groupW/names.length-2, 28));
+
+    ctx.clearRect(0,0,w,h);
+
+    // Grid
+    ctx.strokeStyle="rgba(200,205,220,0.7)"; ctx.lineWidth=1;
+    ticks.forEach(v=>{
+      const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
+      if(y>=top&&y<=bottom){ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
+    });
+    // Y labels
+    ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="right";
+    ticks.forEach(v=>{
+      const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
+      if(y>=top-2&&y<=bottom+2) ctx.fillText((v>=0?"+":"")+fmtNum(v),left-6,y+4);
+    });
+    // X labels (dates)
+    ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
+    const step2=Math.max(1,Math.floor(days.length/6));
+    days.forEach((d,i)=>{if(i%step2===0){const x=left+groupW*i+groupW/2;ctx.fillText(d.substring(5),x,bottom+16);}});
+
+    // Zero line
+    ctx.strokeStyle="rgba(100,100,150,0.35)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(left,zeroY); ctx.lineTo(right,zeroY); ctx.stroke();
+
+    // Bars
+    names.forEach((name,ni)=>{
+      const series=seriesMap[name];
+      series.forEach((v,i)=>{
+        const cx=left+groupW*i+groupW/2+(ni-(names.length-1)/2)*(barW+2);
+        const barH=Math.abs((bottom-top)*((v-0)/(hi-lo)));
+        const y=v>=0?zeroY-barH:zeroY;
+        ctx.fillStyle=colors[ni];
+        ctx.globalAlpha=0.82;
+        ctx.fillRect(cx-barW/2,y,barW,Math.max(barH,1));
+        ctx.globalAlpha=1;
+      });
+    });
+
+    leg.innerHTML = names.map((nm,i)=>
+      `<div class="legend-item"><div class="legend-rect" style="background:${colors[i]}"></div>${nm}</div>`
+    ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${days.length} 天数据 · 每日总涨幅</div>`;
+
+  } else {
+    // Line chart: cross-day vote count trend (end-of-day votes)
+    const seriesMap = {};
+    names.forEach(n => { seriesMap[n] = []; });
+    for (const d of days) {
+      for (const nm of names) {
+        const row = stats.find(s => s.date===d && s.name===nm);
+        seriesMap[nm].push(row ? row.endVotes : null);
+      }
+    }
+
+    const allVals = Object.values(seriesMap).flat().filter(v=>v!==null);
+    if (!allVals.length) { showChartEmpty("canvas-daily","legend-daily","暂无数据"); return; }
+    const minV=Math.min(...allVals), maxV=Math.max(...allVals);
+    const range=maxV-minV||1;
+    const lo=minV-range*0.08, hi=maxV+range*0.08;
+
+    ctx.clearRect(0,0,w,h);
+    drawGrid(ctx,left,top,right,bottom,5,"rgba(200,205,220,0.7)");
+    drawYLabels(ctx,left,top,bottom,lo,hi,5,"#8888aa",fmtNum);
+    // X labels (dates)
+    ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
+    const step2=Math.max(1,Math.floor(days.length/6));
+    days.forEach((d,i)=>{if(i%step2===0||i===days.length-1){const x=left+(right-left)*i/(days.length-1||1);ctx.fillText(d.substring(5),x,bottom+16);}});
+
+    names.forEach((name,ni)=>{
+      const series = seriesMap[name];
+      const pts=[];
+      series.forEach((v,i)=>{
+        if(v!==null) pts.push({x:left+(right-left)*i/(days.length-1||1), y:top+(bottom-top)*(1-(v-lo)/(hi-lo))});
+      });
+      if(pts.length<1) return;
+      // fill
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x,bottom);
+      pts.forEach(p=>ctx.lineTo(p.x,p.y));
+      ctx.lineTo(pts[pts.length-1].x,bottom);
+      ctx.closePath();
+      ctx.fillStyle=dimColors[ni]; ctx.fill();
+      if(pts.length>=2){
+        ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+        for(let i=1;i<pts.length;i++){const mx=(pts[i-1].x+pts[i].x)/2;ctx.bezierCurveTo(mx,pts[i-1].y,mx,pts[i].y,pts[i].x,pts[i].y);}
+        ctx.strokeStyle=colors[ni]; ctx.lineWidth=2.5; ctx.stroke();
+      }
+      pts.forEach(p=>{
+        ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2);
+        ctx.fillStyle="#fff"; ctx.fill();
+        ctx.strokeStyle=colors[ni]; ctx.lineWidth=2; ctx.stroke();
+      });
+    });
+
+    leg.innerHTML = names.map((nm,i)=>
+      `<div class="legend-item"><div class="legend-dot" style="background:${colors[i]}"></div>${nm}</div>`
+    ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${days.length} 天 · 每日末票数趋势</div>`;
+  }
+}
+
+
+function showChartEmpty(canvasId, legendId, msg) {
+  const canvas=document.getElementById(canvasId);
+  if (canvas) { const {ctx,w,h}=setupCanvas(canvas); ctx.clearRect(0,0,w,h); }
+  const leg=document.getElementById(legendId);
+  if (leg) leg.innerHTML=`<span style="color:var(--text3);font-size:0.75rem">${msg}</span>`;
+}
+
+function renderAllCharts() {
+  if (allSnapshots.length<2) return;
+  document.getElementById("chart-title").style.display="";
+  document.getElementById("chart-section").style.display="";
+  const active=document.querySelector(".chart-panel.active")?.id;
+  if (active==="panel-trend") renderTrendChart();
+  if (active==="panel-delta") renderDeltaChart();
+  if (active==="panel-daily-chart") renderDailyChart();
+}
+
+// ════════════════════════════════════════════
+// Controls wiring
+// ════════════════════════════════════════════
+
+// Tab switching
+document.querySelectorAll(".chart-tab").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".chart-tab").forEach(b=>b.classList.remove("active"));
+    document.querySelectorAll(".chart-panel").forEach(p=>p.classList.remove("active"));
+    btn.classList.add("active");
+    const panel=document.getElementById("panel-"+btn.dataset.tab);
+    if (panel) panel.classList.add("active");
+    // panel is now visible — setupCanvas will get correct width
+    if (btn.dataset.tab==="trend") renderTrendChart();
+    if (btn.dataset.tab==="delta") renderDeltaChart();
+    if (btn.dataset.tab==="daily-chart") renderDailyChart();
+  });
+});
+
+// Granularity
+function setGran(g) {
+  granularity = g;
+  ["gran-1min","gran-5min","gran-10min","gran-hour"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove("active");
+  });
+  const map = {"1min":"gran-1min","5min":"gran-5min","10min":"gran-10min","hour":"gran-hour"};
+  const el = document.getElementById(map[g]);
+  if (el) el.classList.add("active");
+  renderAllCharts();
+}
+document.getElementById("gran-1min").addEventListener("click",()=>setGran("1min"));
+document.getElementById("gran-5min").addEventListener("click",()=>setGran("5min"));
+document.getElementById("gran-10min").addEventListener("click",()=>setGran("10min"));
+document.getElementById("gran-hour").addEventListener("click",()=>setGran("hour"));
+
+// Trend mode
+document.getElementById("trend-bar-btn").addEventListener("click",()=>{
+  trendMode="bar";
+  document.getElementById("trend-bar-btn").classList.add("active");
+  document.getElementById("trend-line-btn").classList.remove("active");
+  renderTrendChart();
+});
+document.getElementById("trend-line-btn").addEventListener("click",()=>{
+  trendMode="line";
+  document.getElementById("trend-line-btn").classList.add("active");
+  document.getElementById("trend-bar-btn").classList.remove("active");
+  renderTrendChart();
+});
+
+// Delta mode
+document.getElementById("delta-bar-btn").addEventListener("click",()=>{
+  deltaMode="bar";
+  document.querySelectorAll("#panel-delta .chart-mode-btn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("delta-bar-btn").classList.add("active");
+  renderDeltaChart();
+});
+document.getElementById("delta-line-btn").addEventListener("click",()=>{
+  deltaMode="line";
+  document.querySelectorAll("#panel-delta .chart-mode-btn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("delta-line-btn").classList.add("active");
+  renderDeltaChart();
+});
+
+// Daily chart mode
+document.getElementById("daily-bar-btn").addEventListener("click",()=>{
+  dailyChartMode="bar";
+  document.getElementById("daily-bar-btn").classList.add("active");
+  document.getElementById("daily-line-btn").classList.remove("active");
+  renderDailyChart();
+});
+document.getElementById("daily-line-btn").addEventListener("click",()=>{
+  dailyChartMode="line";
+  document.getElementById("daily-line-btn").classList.add("active");
+  document.getElementById("daily-bar-btn").classList.remove("active");
+  renderDailyChart();
+});
+
+window.addEventListener("resize",()=>{ renderAllCharts(); });
+
+// Interval selector
+document.getElementById("interval-select").addEventListener("change", e => {
+  INTERVAL_MS = parseInt(e.target.value);
+  if (running) {
+    // restart with new interval
+    clearInterval(timerId);
+    startCountdown();
+    timerId = setInterval(async()=>{ if(!running)return; await doFetch(); startCountdown(); }, INTERVAL_MS);
+  }
+});
+
+// Summary window buttons
+document.querySelectorAll(".summary-win-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    summaryWindow = parseInt(btn.dataset.win);
+    document.querySelectorAll(".summary-win-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    // re-render summary with last data
+    if (allSnapshots.length > 0) {
+      const last = allSnapshots[allSnapshots.length-1];
+      renderSummaryBar(last.rows, last.ts);
+    }
+  });
+});
+
+// Action buttons
+document.getElementById("btn-toggle").addEventListener("click",()=>{
+  if (running) stopTracking(); else startTracking();
+});
+document.getElementById("btn-fetch-now").addEventListener("click",async()=>{
+  await doFetch();
+  if (running) { clearInterval(timerId); startCountdown(); timerId=setInterval(async()=>{ if(!running)return; await doFetch(); startCountdown(); },INTERVAL_MS); }
+});
+document.getElementById("btn-clear-notify").addEventListener("click",()=>{
+  notifyLines.length=0;
+  notifyLines1min.length=0;
+  notifyLines5min.length=0;
+  notifyLines10min.length=0;
+  notifyLinesHour.length=0;
+  refreshNotifyFeed();
+});
+
+// PWA
+let deferredPrompt=null;
+window.addEventListener("beforeinstallprompt",e=>{
+  e.preventDefault(); deferredPrompt=e;
+  document.getElementById("install-banner").classList.remove("hidden");
+  document.getElementById("install-banner").style.display="flex";
+});
+document.getElementById("btn-install").addEventListener("click",async()=>{
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const {outcome}=await deferredPrompt.userChoice;
+  deferredPrompt=null;
+  document.getElementById("install-banner").classList.add("hidden");
+});
+document.getElementById("btn-close-banner").addEventListener("click",()=>{
+  document.getElementById("install-banner").classList.add("hidden");
+});
+
+window.addEventListener("offline",()=>{ if (!running) setStatus("offline","离线模式"); });
+window.addEventListener("online", ()=>{ if (running)  setStatus("running","追踪中"); });
+
+// ════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════
+(async()=>{
+  await openDB();
+  allSnapshots=await dbGetAll("snapshots");
+  allSnapshots.sort((a,b)=>a.ts.localeCompare(b.ts));
+
+  if (allSnapshots.length>0) {
+    const last=allSnapshots[allSnapshots.length-1];
+    const prevSnap=allSnapshots.find(s=>s.ts===last.prevTs);
+    const hourSnap=allSnapshots.find(s=>s.ts===last.hourStartTs);
+    renderCards(last.rows, prevSnap, hourSnap, last.ts);
+    renderSummaryBar(last.rows, last.ts);
+    renderWatchlist(last.watchRows||[], prevSnap);
+    renderDiffRow([...last.rows,...(last.watchRows||[])]);
+    document.getElementById("last-update-label").textContent=`更新于 ${last.ts.substring(11,16)}`;
+    document.getElementById("diff-row").style.display="";
+  }
+  renderHistoryTable();
+  renderDailyPanel();
+  renderAllCharts();
+  // set initial granularity button state
+  setGran("1min");
+  document.getElementById("total-count").textContent=allSnapshots.length+" 次";
+
+  if ("serviceWorker" in navigator) {
+    // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
+    const APP_VERSION = "2026-06-10-v6";
+
+    navigator.serviceWorker.register("sw.js").then(reg => {
+      // 把版本号传给 SW，SW 用它作为缓存 key
+      const sendVer = (sw) => sw && sw.postMessage({ type: "SET_VERSION", version: APP_VERSION });
+
+      if (reg.active)   sendVer(reg.active);
+      if (reg.waiting)  { sendVer(reg.waiting); reg.waiting.postMessage({ type: "SKIP_WAITING" }); }
+      if (reg.installing) {
+        reg.installing.addEventListener("statechange", e => {
+          if (e.target.state === "installed") {
+            sendVer(e.target);
+            e.target.postMessage({ type: "SKIP_WAITING" });
+          }
+        });
+      }
+      reg.addEventListener("updatefound", () => {
+        const sw = reg.installing;
+        sw.addEventListener("statechange", e => {
+          if (e.target.state === "installed") {
+            sendVer(e.target);
+            e.target.postMessage({ type: "SKIP_WAITING" });
+            // 新 SW 接管后静默刷新，用户无感知
+            navigator.serviceWorker.addEventListener("controllerchange", () => location.reload());
+          }
+        });
+      });
+    }).catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
