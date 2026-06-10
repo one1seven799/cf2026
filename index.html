@@ -606,6 +606,7 @@
 // 常量
 // ════════════════════════════════════════════
 const API_URL     = "https://vote.api.mgtv.com/chengfeng/query_vote_list?os=win&did=f86d8e2a-eaa6-4878-a689-579d6dec2555&source=share_cf_zj_2026&invoker=mobile-zhipubao&appVersion=6.9.9_vipact&mac=f86d8e2a-eaa6-4878-a689-579d6dec2555&version=6.9.9_vipact";
+const WORKER_URL  = "https://rapid-king-78e4.one1seven799.workers.dev";
 let INTERVAL_MS   = 10 * 60 * 1000;  // dynamic — changed by interval-select
 const ALERT_10MIN  = 18000;
 const ALERT_HOURLY = 100000;
@@ -777,6 +778,10 @@ async function doFetch() {
     await dbAdd("snapshots", snap);
     snap.id = allSnapshots.length + 1;
     allSnapshots.push(snap);
+
+    // Queue for cloud sync
+    kvPendingSnaps.push(snap);
+    scheduleKVSync();
 
     // Check for watchlist surges
     checkWatchSurge(watchRows, prevSnap, mainRows);
@@ -1487,6 +1492,91 @@ async function saveViaProxy(relPath, content, isBinary) {
   return false;
 }
 
+// ════════════════════════════════════════════
+// KV 云端同步
+// ════════════════════════════════════════════
+let kvSyncTimer = null;
+let kvPendingSnaps = []; // snaps waiting to be uploaded
+
+// Upload pending snapshots to KV (debounced 5s)
+function scheduleKVSync() {
+  if (kvSyncTimer) clearTimeout(kvSyncTimer);
+  kvSyncTimer = setTimeout(flushKVSync, 5000);
+}
+
+async function flushKVSync() {
+  if (!kvPendingSnaps.length) return;
+  const batch = [...kvPendingSnaps];
+  kvPendingSnaps = [];
+  try {
+    const resp = await fetch(`${WORKER_URL}/snapshots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snapshots: batch }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const j = await resp.json();
+    if (j.ok) {
+      console.log(`☁️ KV 已同步 ${j.saved} 条`);
+    } else {
+      console.warn("KV sync error:", j.error);
+      // put back so they retry next time
+      kvPendingSnaps.unshift(...batch);
+    }
+  } catch (e) {
+    console.warn("KV sync failed:", e);
+    kvPendingSnaps.unshift(...batch);
+  }
+}
+
+// Load all snapshots from KV on startup
+async function loadFromKV() {
+  try {
+    showToast("☁️ 正在从云端恢复历史数据…");
+    const resp = await fetch(`${WORKER_URL}/snapshots`, {
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await resp.json();
+    if (!j.ok) throw new Error(j.error);
+
+    const remote = j.snapshots;
+    if (!remote.length) { showToast("☁️ 云端暂无历史数据"); return; }
+
+    // Merge with local IndexedDB — remote wins for same ts
+    const localTs = new Set(allSnapshots.map(s => s.ts));
+    let added = 0;
+    for (const snap of remote) {
+      if (!localTs.has(snap.ts)) {
+        await dbAdd("snapshots", snap);
+        allSnapshots.push(snap);
+        added++;
+      }
+    }
+    allSnapshots.sort((a, b) => a.ts.localeCompare(b.ts));
+    showToast(`☁️ 云端恢复 ${added} 条历史记录`);
+
+    // Refresh UI with loaded data
+    if (allSnapshots.length > 0) {
+      const last = allSnapshots[allSnapshots.length - 1];
+      const prevSnap = allSnapshots.find(s => s.ts === last.prevTs);
+      const hourSnap = allSnapshots.find(s => s.ts === last.hourStartTs);
+      renderCards(last.rows, prevSnap, hourSnap, last.ts);
+      renderSummaryBar(last.rows, last.ts);
+      renderWatchlist(last.watchRows || [], prevSnap);
+      renderDiffRow([...last.rows, ...(last.watchRows || [])]);
+      document.getElementById("last-update-label").textContent = `更新于 ${last.ts.substring(11, 16)}`;
+      document.getElementById("diff-row").style.display = "";
+      document.getElementById("total-count").textContent = allSnapshots.length + " 次";
+    }
+    renderHistoryTable();
+    renderDailyPanel();
+    renderAllCharts();
+  } catch (e) {
+    console.warn("KV load failed:", e);
+    showToast("☁️ 云端数据加载失败，使用本地缓存");
+  }
+}
+
 function exportAll() {
   ["raw","live","live5","hourly","daily","notify"].forEach((t,i)=>setTimeout(()=>exportCSV(t),i*300));
 }
@@ -2186,9 +2276,11 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
   renderHistoryTable();
   renderDailyPanel();
   renderAllCharts();
-  // set initial granularity button state
   setGran("1min");
   document.getElementById("total-count").textContent=allSnapshots.length+" 次";
+
+  // 从云端恢复历史数据
+  await loadFromKV();
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
