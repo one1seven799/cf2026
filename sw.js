@@ -1,66 +1,69 @@
-// sw.js — 自动跟随 index.html 版本更新缓存
-// 版本由 index.html 通过 postMessage 传入，无需手动改此文件
+// 乘风2026 Service Worker
+// 只缓存同源 GET 请求，跳过 chrome-extension / POST / Worker API 请求
 
-let CACHE = "cf2026-v1"; // 初始值，会被 index.html 传来的版本号覆盖
-const ASSETS = ["./", "./index.html", "./manifest.json"];
+let CACHE_NAME = "cf2026-v1";
 
-// 收到 index.html 发来的版本号，更新缓存名并清除旧缓存
-self.addEventListener("message", e => {
-  if (e.data && e.data.type === "SET_VERSION") {
-    const newCache = "cf2026-" + e.data.version;
-    if (newCache !== CACHE) {
-      CACHE = newCache;
-      // 清除所有旧缓存
-      caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-      ).then(() => {
-        // 重新缓存最新资源
-        caches.open(CACHE).then(c => c.addAll(ASSETS));
-      });
-    }
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SET_VERSION") {
+    CACHE_NAME = "cf2026-" + event.data.version;
   }
-  if (e.data && e.data.type === "SKIP_WAITING") {
+  if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
 });
 
-self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())
+self.addEventListener("install", (event) => {
+  // 预缓存核心资源
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(["/", "/index.html", "/manifest.json"])
+        .catch(() => {}) // 资源不存在时不阻塞安装
+    )
   );
 });
 
-self.addEventListener("activate", e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+self.addEventListener("activate", (event) => {
+  // 清理旧缓存
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE_NAME)
+          .map((k) => caches.delete(k))
+      )
     ).then(() => self.clients.claim())
   );
 });
 
-self.addEventListener("fetch", e => {
-  const url = new URL(e.request.url);
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
 
-  // API 请求走网络，不缓存
-  if (url.hostname.includes("mgtv.com") || url.hostname.includes("localhost")) {
-    e.respondWith(
-      fetch(e.request).catch(() =>
-        new Response(JSON.stringify({ errno: -1, errmsg: "离线" }), {
-          headers: { "Content-Type": "application/json" }
-        })
-      )
-    );
-    return;
-  }
+  // ── 跳过条件 ──────────────────────────────────────────
+  // 1. 非 GET 请求（POST / PUT 等不可缓存）
+  if (req.method !== "GET") return;
 
-  // 应用资源：网络优先，失败走缓存（保证总是拿最新文件）
-  e.respondWith(
-    fetch(e.request).then(resp => {
-      if (resp.ok) {
-        const clone = resp.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return resp;
-    }).catch(() => caches.match(e.request))
+  // 2. chrome-extension:// 或其他非 http(s) 协议
+  if (!req.url.startsWith("http://") && !req.url.startsWith("https://")) return;
+
+  // 3. Worker API（投票接口、KV 同步接口）——始终走网络
+  if (req.url.includes("workers.dev") || req.url.includes("vote.api.mgtv.com")) return;
+
+  // 4. Google Fonts 等第三方资源——不拦截，让浏览器自己处理
+  if (!req.url.startsWith(self.location.origin)) return;
+  // ──────────────────────────────────────────────────────
+
+  // 同源 GET：Cache First，网络兜底
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req).then((response) => {
+        // 只缓存成功的普通响应
+        if (response && response.status === 200 && response.type === "basic") {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+        }
+        return response;
+      });
+    })
   );
 });
