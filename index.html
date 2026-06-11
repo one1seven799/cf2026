@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#f5f6fa">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="乘风追票">
 <link rel="manifest" href="manifest.json">
@@ -615,7 +614,7 @@ const ALERT_HOURLY = 100000;
 // 5-9名涨幅异常预警（10分钟内涨这么多就提示要冲进前四）
 const ALERT_WATCH_10MIN  = 15000;
 const DB_NAME      = "cf2026v2";
-const DB_VERSION   = 1;
+const DB_VERSION   = 2;
 
 // ════════════════════════════════════════════
 // 北京时间工具（UTC+8，不依赖本机时区）
@@ -655,7 +654,13 @@ function openDB() {
       const d = e.target.result;
       if (!d.objectStoreNames.contains("snapshots")) {
         const s = d.createObjectStore("snapshots", { keyPath:"id", autoIncrement:true });
-        s.createIndex("ts","ts");
+        s.createIndex("ts","ts",{ unique: true });
+      } else {
+        // v1→v2: recreate ts index with unique:true
+        const tx = e.target.transaction;
+        const s = tx.objectStore("snapshots");
+        if (s.indexNames.contains("ts")) s.deleteIndex("ts");
+        s.createIndex("ts","ts",{ unique: true });
       }
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
@@ -1565,14 +1570,20 @@ async function loadFromKV() {
 
     // Merge with local IndexedDB — remote wins for same ts
     const localTs = new Set(allSnapshots.map(s => s.ts));
+    const addedTs = new Set(); // track ts added in this batch to prevent duplicate puts
     let added = 0;
     for (const snap of remoteDeduped) {
-      if (!localTs.has(snap.ts)) {
-        // 删掉云端带回来的旧 id，让 IndexedDB 自己分配新 id，避免 ConstraintError
+      if (!localTs.has(snap.ts) && !addedTs.has(snap.ts)) {
         const { id: _drop, ...snapNoId } = snap;
-        await dbPut("snapshots", snapNoId);
-        allSnapshots.push(snapNoId);
-        added++;
+        try {
+          await dbPut("snapshots", snapNoId);
+          allSnapshots.push(snapNoId);
+          addedTs.add(snap.ts);
+          added++;
+        } catch (e) {
+          if (e.name !== "ConstraintError") throw e;
+          // ts already exists (race/duplicate) — skip silently
+        }
       }
     }
     allSnapshots.sort((a, b) => a.ts.localeCompare(b.ts));
