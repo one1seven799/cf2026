@@ -1,12 +1,10 @@
 // 乘风2026 Service Worker
 // 只缓存同源 GET 请求，跳过 chrome-extension / POST / Worker API 请求
+// ⚠️ 每次更新文件时修改这里的版本号，SW 会自动清除旧缓存并接管页面
 
-let CACHE_NAME = "cf2026-v1";
+const CACHE_NAME = "cf2026-2026-06-11-v7";
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "SET_VERSION") {
-    CACHE_NAME = "cf2026-" + event.data.version;
-  }
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
