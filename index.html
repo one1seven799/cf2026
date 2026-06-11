@@ -676,15 +676,22 @@ function dbAdd(store, data) {
   });
 }
 // put = insert or overwrite（用于云端恢复，避免 id 冲突）
-// 使用 IDB put() 而非 add()，当 id 已存在时覆盖而非抛出 ConstraintError
+// ts 索引是 unique 的；如果 ts 已存在则静默跳过（返回 null）
 function dbPut(store, data) {
-  return new Promise((res,rej) => {
-    const tx = db.transaction(store,"readwrite");
-    // Omit any id so autoIncrement assigns a new key; use put() to be safe against duplicates
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
     const { id: _drop, ...dataNoId } = data;
     const r = tx.objectStore(store).put(dataNoId);
     r.onsuccess = () => res(r.result);
-    r.onerror   = e => rej(e.target.error);
+    r.onerror = e => {
+      if (e.target.error && e.target.error.name === "ConstraintError") {
+        e.preventDefault();  // prevent transaction abort
+        tx.abort();
+        res(null);           // ts already exists — skip silently
+      } else {
+        rej(e.target.error);
+      }
+    };
   });
 }
 function dbGetAll(store) {
@@ -1575,15 +1582,13 @@ async function loadFromKV() {
     for (const snap of remoteDeduped) {
       if (!localTs.has(snap.ts) && !addedTs.has(snap.ts)) {
         const { id: _drop, ...snapNoId } = snap;
-        try {
-          await dbPut("snapshots", snapNoId);
+        const putResult = await dbPut("snapshots", snapNoId);
+        if (putResult !== null) {
           allSnapshots.push(snapNoId);
           addedTs.add(snap.ts);
           added++;
-        } catch (e) {
-          if (e.name !== "ConstraintError") throw e;
-          // ts already exists (race/duplicate) — skip silently
         }
+        // putResult === null means ts already existed — skip silently
       }
     }
     allSnapshots.sort((a, b) => a.ts.localeCompare(b.ts));
@@ -2416,7 +2421,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v4";
+    const APP_VERSION = "2026-06-11-v5";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
