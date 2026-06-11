@@ -668,6 +668,15 @@ function dbAdd(store, data) {
     r.onerror   = e => rej(e.target.error);
   });
 }
+// put = insert or overwrite（用于云端恢复，避免 id 冲突）
+function dbPut(store, data) {
+  return new Promise((res,rej) => {
+    const tx = db.transaction(store,"readwrite");
+    const r = tx.objectStore(store).add(data); // keyPath autoIncrement, no id = safe add
+    r.onsuccess = () => res(r.result);
+    r.onerror   = e => rej(e.target.error);
+  });
+}
 function dbGetAll(store) {
   return new Promise((res,rej) => {
     const tx = db.transaction(store,"readonly");
@@ -1508,11 +1517,13 @@ async function flushKVSync() {
   if (!kvPendingSnaps.length) return;
   const batch = [...kvPendingSnaps];
   kvPendingSnaps = [];
+  // 去掉 IndexedDB 自增 id，避免拉回时引发 ConstraintError
+  const batchClean = batch.map(({ id: _drop, ...s }) => s);
   try {
     const resp = await fetch(`${WORKER_URL}/snapshots`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snapshots: batch }),
+      body: JSON.stringify({ snapshots: batchClean }),
       signal: AbortSignal.timeout(15000),
     });
     const j = await resp.json();
@@ -1547,8 +1558,10 @@ async function loadFromKV() {
     let added = 0;
     for (const snap of remote) {
       if (!localTs.has(snap.ts)) {
-        await dbAdd("snapshots", snap);
-        allSnapshots.push(snap);
+        // 删掉云端带回来的旧 id，让 IndexedDB 自己分配新 id，避免 ConstraintError
+        const { id: _drop, ...snapNoId } = snap;
+        await dbPut("snapshots", snapNoId);
+        allSnapshots.push(snapNoId);
         added++;
       }
     }
@@ -2382,7 +2395,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v2";
+    const APP_VERSION = "2026-06-11-v3";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
