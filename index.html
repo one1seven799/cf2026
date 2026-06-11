@@ -690,7 +690,7 @@ function dbClear(store) {
 // ════════════════════════════════════════════
 async function fetchVotes() {
   const t = Date.now();
-  const url = `https://cf2026.workers.dev/?t=${t}`;
+  const url = `https://cf2026.one1seven799.workers.dev/?t=${t}`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}，请确认 proxy.py 正在运行`);
   const data = await resp.json();
