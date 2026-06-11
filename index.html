@@ -592,7 +592,7 @@
     <div class="export-btns">
       <button class="btn btn-secondary" onclick="exportCSV('raw')">原始数据</button>
       <button class="btn btn-secondary" onclick="exportCSV('live')">实时流水</button>
-      <button class="btn btn-secondary" onclick="exportCSV('live5')">5分钟流水</button>
+      <button class="btn btn-secondary" onclick="exportCSV('live5')" title="包含云端历史（即使网页关闭期间也有记录）">☁️ 5分钟流水</button>
       <button class="btn btn-secondary" onclick="exportCSV('hourly')">整点报告</button>
       <button class="btn btn-secondary" onclick="exportCSV('daily')">日报汇总</button>
       <button class="btn btn-secondary" onclick="exportCSV('notify')">文字通知</button>
@@ -979,10 +979,10 @@ function renderSummaryBar(rows, tsStr) {
   bar.style.display = "";
 
   const windowMs = summaryWindow * 60 * 1000;
-  const cutoffTs = fmtCSTDate(new Date(Date.now() - windowMs + 8*3600*1000 - windowMs));
-  // find the snapshot closest to (now - window) for each person
+  const cutoffTs = fmtCSTDate(new Date(Date.now() - windowMs + 8*3600*1000));
+  // find the snapshot closest to (now - window)
   const snapBefore = [...allSnapshots].reverse().find(s => s.ts <= cutoffTs) ||
-                     (allSnapshots.length > 1 ? allSnapshots[allSnapshots.length - 2] : null);
+                     (allSnapshots.length > 1 ? allSnapshots[0] : null);
 
   const prevMap = snapBefore ? Object.fromEntries(snapBefore.rows.map(r=>[r.name,r.votes])) : {};
 
@@ -1021,8 +1021,20 @@ function renderSummaryBar(rows, tsStr) {
 // UI: cards
 // ════════════════════════════════════════════
 function renderCards(rows, prevSnap, hourStartSnap, tsStr) {
-  const prev      = prevSnap      ? Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes])) : null;
   const hourStart = hourStartSnap ? Object.fromEntries(hourStartSnap.rows.map(r=>[r.name,r.votes])) : null;
+  // find snap ~INTERVAL_MS before tsStr for interval delta
+  let intervalSnap = prevSnap;
+  if (tsStr && allSnapshots.length > 1) {
+    const cutMs = new Date(tsStr.replace(" ","T")+"Z").getTime() - INTERVAL_MS;
+    let best = null;
+    for (const s of allSnapshots) {
+      if (new Date(s.ts.replace(" ","T")+"Z").getTime() <= cutMs) best = s;
+    }
+    if (best) intervalSnap = best;
+  }
+  const mins = Math.round(INTERVAL_MS / 60000);
+  const intervalLabel = `${mins}分钟涨幅`;
+  const prev = intervalSnap ? Object.fromEntries(intervalSnap.rows.map(r=>[r.name,r.votes])) : null;
   const grid = document.getElementById("rank-grid");
   grid.innerHTML = "";
   for (const r of rows) {
@@ -1046,7 +1058,7 @@ function renderCards(rows, prevSnap, hourStartSnap, tsStr) {
       <div class="rank-votes">${r.votes.toLocaleString()}</div>
       <div class="rank-deltas">
         <div class="delta-row">
-          <span class="delta-label">10分钟涨幅</span>
+          <span class="delta-label">${intervalLabel}</span>
           <span class="delta-val ${g10Cls}">${g10Str}</span>
         </div>
         <div class="delta-row">
@@ -1360,52 +1372,94 @@ function exportCSV(type) {
         rows.push([snap.ts,r.rank,r.name,r.votes]);
     content = makeCSV(headers,rows);
   } else if (type==="live") {
-    const headers = ["时间(北京)","姓名","排名","当前票数","10分钟涨幅","10分钟区间","小时累计涨幅","小时区间","10min预警","小时预警"];
+    const mins = Math.round(INTERVAL_MS / 60000);
+    const headers = ["时间(北京)","姓名","排名","当前票数",`${mins}分钟涨幅`,`${mins}分钟区间`,"小时累计涨幅","小时区间","间隔预警","小时预警"];
     const rows=[];
     for (const snap of allSnapshots) {
-      const prevSnap = allSnapshots.find(s=>s.ts===snap.prevTs);
+      const snapMs = new Date(snap.ts.replace(" ","T")+"Z").getTime();
+      const cutMs = snapMs - INTERVAL_MS;
+      let intSnap = null;
+      for (const s of allSnapshots) {
+        if (new Date(s.ts.replace(" ","T")+"Z").getTime() <= cutMs) intSnap = s;
+      }
+      if (!intSnap) intSnap = allSnapshots.find(s=>s.ts===snap.prevTs) || null;
       const hourSnap = allSnapshots.find(s=>s.ts===snap.hourStartTs);
-      const prev      = prevSnap ? Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes])) : null;
-      const hourStart = hourSnap ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
-      const range10 = prevSnap ? `${hm(prevSnap.ts)}→${hm(snap.ts)}` : "首次";
-      const rangeHr = hourSnap ? `${hm(hourSnap.ts)}→${hm(snap.ts)}` : "—";
+      const prev      = intSnap   ? Object.fromEntries(intSnap.rows.map(r=>[r.name,r.votes])) : null;
+      const hourStart = hourSnap  ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
+      const rangeInt = intSnap  ? `${hm(intSnap.ts)}→${hm(snap.ts)}` : "首次";
+      const rangeHr  = hourSnap ? `${hm(hourSnap.ts)}→${hm(snap.ts)}` : "—";
       for (const r of snap.rows) {
-        const g10 = prev      ? r.votes-(prev[r.name]??r.votes) : "—";
-        const gHr = hourStart ? r.votes-(hourStart[r.name]??r.votes) : "—";
-        rows.push([snap.ts,r.name,r.rank,r.votes,g10,range10,gHr,rangeHr,
-          typeof g10==="number"&&g10>=ALERT_10MIN?"🚨超速":"",
+        const gInt = prev      ? r.votes-(prev[r.name]??r.votes) : "—";
+        const gHr  = hourStart ? r.votes-(hourStart[r.name]??r.votes) : "—";
+        rows.push([snap.ts,r.name,r.rank,r.votes,gInt,rangeInt,gHr,rangeHr,
+          typeof gInt==="number"&&gInt>=ALERT_10MIN?"🚨超速":"",
           typeof gHr==="number"&&gHr>=ALERT_HOURLY?"🚨爆量":""]);
       }
     }
     content = makeCSV(headers,rows);
   } else if (type==="live5") {
-    // 5-minute bucketed flow: one row per 5-min bucket per person (last snap in bucket)
-    const bucketMap = {};
-    for (const snap of allSnapshots) {
-      const m = snap.ts.substring(14,16);
-      const bucket = snap.ts.substring(0,14) + String(Math.floor(parseInt(m)/5)*5).padStart(2,'0');
-      bucketMap[bucket] = snap;
-    }
-    const bucketSnaps = Object.values(bucketMap).sort((a,b)=>a.ts.localeCompare(b.ts));
-    const headers5 = ["时间(北京)","姓名","排名","当前票数","5分钟涨幅","5分钟区间","小时累计涨幅","小时区间","预警"];
-    const rows5=[];
-    for (let i=0; i<bucketSnaps.length; i++) {
-      const snap = bucketSnaps[i];
-      const prev5 = i>0 ? bucketSnaps[i-1] : null;
-      const hourSnap = allSnapshots.find(s=>s.ts===snap.hourStartTs);
-      const prev5Map = prev5 ? Object.fromEntries(prev5.rows.map(r=>[r.name,r.votes])) : null;
-      const hourStart = hourSnap ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
-      const range5 = prev5 ? `${hm(prev5.ts)}→${hm(snap.ts)}` : "首次";
-      const rangeHr = hourSnap ? `${hm(hourSnap.ts)}→${hm(snap.ts)}` : "—";
-      for (const r of snap.rows) {
-        const g5  = prev5Map  ? r.votes-(prev5Map[r.name]??r.votes) : "—";
-        const gHr = hourStart ? r.votes-(hourStart[r.name]??r.votes) : "—";
-        rows5.push([snap.ts,r.name,r.rank,r.votes,g5,range5,gHr,rangeHr,
-          typeof g5==="number"&&g5>=ALERT_10MIN*0.5?"⚠️快速":"",
-        ]);
+    // 5-minute flow uses cloud snapshots (saved every 5 min by Worker cron) merged with local.
+    // Fetch cloud data first, then build CSV asynchronously.
+    (async () => {
+      let cloudSnaps = [];
+      try {
+        const resp = await fetch(`${WORKER_URL}/snapshots`, { signal: AbortSignal.timeout(15000) });
+        const j = await resp.json();
+        if (j.ok && Array.isArray(j.snapshots)) cloudSnaps = j.snapshots;
+      } catch(e) { console.warn("云端拉取失败，仅用本地数据:", e.message); }
+
+      // Merge cloud + local, deduplicate by ts, sort ascending
+      const merged = [...cloudSnaps];
+      const cloudTsSet = new Set(cloudSnaps.map(s=>s.ts));
+      for (const s of allSnapshots) { if (!cloudTsSet.has(s.ts)) merged.push(s); }
+      merged.sort((a,b)=>a.ts.localeCompare(b.ts));
+
+      // Keep only one snap per 5-min bucket (last snap in bucket wins)
+      const bucketMap = {};
+      for (const snap of merged) {
+        const m = snap.ts.substring(14,16);
+        const bucket = snap.ts.substring(0,14) + String(Math.floor(parseInt(m)/5)*5).padStart(2,'0');
+        bucketMap[bucket] = snap;
       }
-    }
-    content = makeCSV(headers5, rows5);
+      const bucketSnaps = Object.values(bucketMap).sort((a,b)=>a.ts.localeCompare(b.ts));
+
+      // Build hourStartTs lookup from merged list
+      function findHourSnap(snap) {
+        if (snap.hourStartTs) {
+          const hs = merged.find(s=>s.ts===snap.hourStartTs);
+          if (hs) return hs;
+        }
+        // fallback: first snap of same hour in merged
+        const prefix = snap.ts.substring(0,13);
+        return merged.find(s=>s.ts.startsWith(prefix)) || null;
+      }
+
+      const headers5 = ["时间(北京)","姓名","排名","当前票数","5分钟涨幅","5分钟区间","小时累计涨幅","小时区间","数据来源","预警"];
+      const rows5=[];
+      for (let i=0; i<bucketSnaps.length; i++) {
+        const snap = bucketSnaps[i];
+        const prev5 = i>0 ? bucketSnaps[i-1] : null;
+        const hourSnap = findHourSnap(snap);
+        const prev5Map  = prev5    ? Object.fromEntries(prev5.rows.map(r=>[r.name,r.votes])) : null;
+        const hourStart = hourSnap ? Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes])) : null;
+        const range5  = prev5    ? `${hm(prev5.ts)}→${hm(snap.ts)}` : "首次";
+        const rangeHr = hourSnap ? `${hm(hourSnap.ts)}→${hm(snap.ts)}` : "—";
+        const src = cloudTsSet.has(snap.ts) ? "云端" : "本地";
+        for (const r of snap.rows) {
+          const g5  = prev5Map  ? r.votes-(prev5Map[r.name]??r.votes)  : "—";
+          const gHr = hourStart ? r.votes-(hourStart[r.name]??r.votes) : "—";
+          rows5.push([snap.ts,r.name,r.rank,r.votes,g5,range5,gHr,rangeHr,src,
+            typeof g5==="number"&&g5>=ALERT_10MIN*0.5?"⚠️快速":""]);
+        }
+      }
+      const csv5 = makeCSV(headers5, rows5);
+      const now5 = fmtCSTDate(getCSTDate()).replace(/[: ]/g,"-");
+      const fn5 = `乘风2026_5分钟流水(云端)_${now5}.csv`;
+      saveViaProxy(`Data/${fn5}`,"﻿"+csv5,false).then(saved=>{
+        if(!saved){const blob=new Blob(["﻿"+csv5],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fn5;a.click();}
+      });
+    })();
+    return;
   } else if (type==="daily") {
     const stats = getDailyStats();
     const headers = ["日期","排名","姓名","当日起始票数","当日结束票数","当日总涨幅","记录条数"];
@@ -2422,7 +2476,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v5";
+    const APP_VERSION = "2026-06-11-v7";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
