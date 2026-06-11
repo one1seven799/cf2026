@@ -1571,6 +1571,7 @@ async function loadFromKV() {
     renderHistoryTable();
     renderDailyPanel();
     renderAllCharts();
+    rebuildNotifyFromHistory();
   } catch (e) {
     console.warn("KV load failed:", e);
     showToast("☁️ 云端数据加载失败，使用本地缓存");
@@ -1579,6 +1580,101 @@ async function loadFromKV() {
 
 function exportAll() {
   ["raw","live","live5","hourly","daily","notify"].forEach((t,i)=>setTimeout(()=>exportCSV(t),i*300));
+}
+
+// ════════════════════════════════════════════
+// 从历史快照重建播报记录（云端恢复或本地加载后调用）
+// ════════════════════════════════════════════
+function rebuildNotifyFromHistory() {
+  // 清空现有播报（避免重复）
+  notifyLines.length = 0;
+  notifyLines1min.length = 0;
+  notifyLines5min.length = 0;
+  notifyLines10min.length = 0;
+  notifyLinesHour.length = 0;
+
+  if (allSnapshots.length < 2) return;
+
+  // 辅助：找 N 分钟前最近快照
+  function snapNMinBefore(tsStr, minutes) {
+    const cutMs = new Date(tsStr.replace(" ","T")+"Z").getTime() - minutes * 60 * 1000;
+    let best = null;
+    for (const s of allSnapshots) {
+      const sMs = new Date(s.ts.replace(" ","T")+"Z").getTime();
+      if (sMs <= cutMs) best = s;
+      else break;
+    }
+    return best;
+  }
+
+  function buildLinesText(rows, refSnap, granTag, tsStr) {
+    if (!refSnap) return null;
+    const refMap = Object.fromEntries(refSnap.rows.map(r=>[r.name,r.votes]));
+    const lines = [`【${granTag} 涨幅播报】${tsStr.substring(11,16)}（北京时间）`, `区间：${hm(refSnap.ts)}→${hm(tsStr)}`,"─".repeat(28)];
+    let anyDelta = false;
+    for (const r of rows) {
+      const rv = refMap[r.name];
+      if (rv === undefined) continue;
+      const delta = r.votes - rv;
+      anyDelta = true;
+      const f = (granTag==="10分钟"&&delta>=ALERT_10MIN)||(granTag==="1小时"&&delta>=ALERT_HOURLY) ? " 🚨" : "";
+      lines.push(`#${r.rank} ${r.name}  ${r.votes.toLocaleString()}  涨 ${delta>=0?"+":""}${delta.toLocaleString()}${f}`);
+    }
+    if (!anyDelta) return null;
+    if (rows.length>=3) lines.push(`2→3差：${(rows[0].votes-rows[1].votes).toLocaleString()}  3→4差：${(rows[1].votes-rows[2].votes).toLocaleString()}`);
+    return lines.join("\n");
+  }
+
+  // 只回放最近 50 条（避免太多）
+  const snaps = allSnapshots.slice(-50);
+
+  for (let i = 1; i < snaps.length; i++) {
+    const snap = snaps[i];
+    const rows = snap.rows;
+    if (!rows || !rows.length) continue;
+    const tsStr = snap.ts;
+
+    const prevSnap = allSnapshots.find(s => s.ts === snap.prevTs) || snaps[i-1];
+    const hourStartSnap = allSnapshots.find(s => s.ts === snap.hourStartTs);
+    const isNewHour = prevSnap && prevSnap.ts.substring(0,13) !== tsStr.substring(0,13);
+
+    // 全量播报（"全部"tab用）
+    const notifyText = buildNotify(rows, snap.watchRows||[], prevSnap, hourStartSnap, tsStr, isNewHour);
+    notifyLines.push({ text: notifyText, tsStr });
+
+    // 1分钟
+    const t1 = buildLinesText(rows, prevSnap, "1分钟", tsStr);
+    if (t1) notifyLines1min.push({ text: t1, tsStr });
+
+    // 5分钟
+    const snap5 = snapNMinBefore(tsStr, 5);
+    if (snap5) {
+      const t5 = buildLinesText(rows, snap5, "5分钟", tsStr);
+      if (t5) notifyLines5min.push({ text: t5, tsStr });
+    }
+
+    // 10分钟
+    const snap10 = snapNMinBefore(tsStr, 10);
+    if (snap10) {
+      const t10 = buildLinesText(rows, snap10, "10分钟", tsStr);
+      if (t10) notifyLines10min.push({ text: t10, tsStr });
+    }
+
+    // 小时播报（整点换小时时）
+    if (isNewHour && hourStartSnap) {
+      const tHr = buildLinesText(rows, hourStartSnap, "1小时", tsStr);
+      if (tHr) notifyLinesHour.push({ text: tHr, tsStr });
+    }
+  }
+
+  // 全部反转（最新在前），裁剪
+  notifyLines.reverse();      if (notifyLines.length > 50)      notifyLines.length = 50;
+  notifyLines1min.reverse();  if (notifyLines1min.length > 50)  notifyLines1min.length = 50;
+  notifyLines5min.reverse();  if (notifyLines5min.length > 50)  notifyLines5min.length = 50;
+  notifyLines10min.reverse(); if (notifyLines10min.length > 50) notifyLines10min.length = 50;
+  notifyLinesHour.reverse();  if (notifyLinesHour.length > 50)  notifyLinesHour.length = 50;
+
+  refreshNotifyFeed();
 }
 
 // ════════════════════════════════════════════
@@ -2278,6 +2374,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
   renderAllCharts();
   setGran("1min");
   document.getElementById("total-count").textContent=allSnapshots.length+" 次";
+  rebuildNotifyFromHistory();
 
   // 从云端恢复历史数据，完成后自动启动追踪
   await loadFromKV();
@@ -2285,7 +2382,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v1";
+    const APP_VERSION = "2026-06-11-v2";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
