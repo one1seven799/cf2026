@@ -614,7 +614,7 @@ const ALERT_HOURLY = 100000;
 // 5-9名涨幅异常预警（10分钟内涨这么多就提示要冲进前四）
 const ALERT_WATCH_10MIN  = 15000;
 const DB_NAME      = "cf2026v2";
-const DB_VERSION   = 2;
+const DB_VERSION   = 3;
 
 // ════════════════════════════════════════════
 // 北京时间工具（UTC+8，不依赖本机时区）
@@ -664,7 +664,8 @@ function openDB() {
       }
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
-    req.onerror   = e => rej(e.target.error);
+    req.onerror   = e => { console.error("IndexedDB open error:", e.target.error); rej(e.target.error); };
+    req.onblocked = () => { console.warn("IndexedDB upgrade blocked — close other tabs of this app and reload"); };
   });
 }
 function dbAdd(store, data) {
