@@ -350,8 +350,8 @@
   .chart-mode-btn.active { background: rgba(26,95,168,0.1); color: #1a5fa8; border-color: #1a5fa8; }
   .chart-panel { display: none; padding: 16px 16px 12px; }
   .chart-panel.active { display: block; }
-  .chart-canvas-wrap { position: relative; width: 100%; height: 280px; }
-  .chart-canvas-wrap canvas { width: 100% !important; height: 280px !important; display: block; }
+  .chart-canvas-wrap { position: relative; width: 100%; height: 280px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+  .chart-canvas-wrap canvas { height: 280px !important; display: block; }
   .chart-sub-controls { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
   .granularity-label { font-size: 0.7rem; color: var(--text3); margin-right: 2px; }
   .chart-legend {
@@ -1825,9 +1825,9 @@ function getChartColorsDim(names) {
   });
 }
 
-// Cached chart width — set once from chart-section, reused by all canvas setups
+// Cached chart container width — fallback when measurement isn't possible
 let _chartW = 0;
-function getChartWidth() {
+function getChartContainerWidth() {
   const section = document.getElementById("chart-section");
   if (section) {
     const w = section.getBoundingClientRect().width - 32; // 16px padding each side
@@ -1836,9 +1836,20 @@ function getChartWidth() {
   return _chartW || 600;
 }
 
-function setupCanvas(canvas) {
+// Compute canvas drawing width: at least the container width, but wide enough
+// to give each data point a minimum pixel width (so granularity changes are
+// visually distinct and the chart becomes horizontally scrollable when dense).
+function getChartWidth(numPoints) {
+  const containerW = getChartContainerWidth();
+  if (!numPoints || numPoints < 2) return containerW;
+  const minPxPerPoint = 36; // minimum spacing per data point
+  const needed = numPoints * minPxPerPoint + 80; // + padding for axes
+  return Math.max(containerW, Math.round(needed));
+}
+
+function setupCanvas(canvas, numPoints) {
   const dpr = window.devicePixelRatio||1;
-  const w = getChartWidth();
+  const w = getChartWidth(numPoints);
   const h = 280; // fixed — matches .chart-canvas-wrap height in CSS
   canvas.width  = w*dpr; canvas.height = h*dpr;
   canvas.style.width = w+"px";
@@ -1867,7 +1878,8 @@ function drawYLabels(ctx, left, top, bottom, minV, maxV, steps, color, fmt) {
 
 function drawXLabels(ctx, labels, left, bottom, right, color) {
   ctx.fillStyle=color; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
-  const step=Math.max(1,Math.floor(labels.length/8));
+  const targetLabels = Math.max(4, Math.floor((right-left)/60)); // ~1 label per 60px
+  const step=Math.max(1,Math.floor(labels.length/targetLabels));
   for (let i=0;i<labels.length;i+=step) {
     const x=left+(right-left)*i/(labels.length-1||1);
     ctx.fillText(labels[i], x, bottom+16);
@@ -1931,7 +1943,7 @@ function renderTrendChart() {
   const snaps = getFilteredSnapshots();
   if (snaps.length < 2) { showChartEmpty("canvas-trend","legend-trend","数据不足"); return; }
   const canvas = document.getElementById("canvas-trend");
-  const {ctx,w,h} = setupCanvas(canvas);
+  const {ctx,w,h} = setupCanvas(canvas, snaps.length);
 
   const pad = {l:60,r:20,t:20,b:28};
   const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
@@ -2024,7 +2036,7 @@ function renderDeltaChart() {
   const snaps = getFilteredSnapshots();
   if (snaps.length < 2) { showChartEmpty("canvas-delta","legend-delta","数据不足"); return; }
   const canvas=document.getElementById("canvas-delta");
-  const {ctx,w,h}=setupCanvas(canvas);
+  const {ctx,w,h}=setupCanvas(canvas, snaps.length-1);
 
   const names=snaps[snaps.length-1].rows.map(r=>r.name);
   const labels=[];
@@ -2034,22 +2046,26 @@ function renderDeltaChart() {
   for (let i=1;i<snaps.length;i++) {
     const snap=snaps[i];
     labels.push(hm(snap.ts));
-    if (granularity==="10min") {
+    if (granularity==="hour") {
+      // hour mode: delta from the start-of-hour snapshot (1-min resolution lookup)
+      let baseSnap = allSnapshots.find(s => s.ts === snap.hourStartTs);
+      if (!baseSnap) {
+        const hk = snap.ts.substring(0,13);
+        baseSnap = allSnapshots.find(s => s.ts.startsWith(hk));
+      }
+      if (!baseSnap) baseSnap = snaps[i-1];
+      const baseMap=Object.fromEntries(baseSnap.rows.map(r=>[r.name,r.votes]));
+      for (const r of snap.rows) {
+        if (seriesMap[r.name]!==undefined)
+          seriesMap[r.name].push(baseMap[r.name]!==undefined ? r.votes-baseMap[r.name] : null);
+      }
+    } else {
       // delta from previous snap
       const prevSnap=snaps[i-1];
       const prevMap=Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes]));
       for (const r of snap.rows) {
         if (seriesMap[r.name]!==undefined)
           seriesMap[r.name].push(prevMap[r.name]!==undefined ? r.votes-prevMap[r.name] : null);
-      }
-    } else {
-      // hour mode: delta from start of that hour (within filtered snaps)
-      const hk=snap.ts.substring(0,13);
-      const hourSnap=snaps.find(s=>s.ts.startsWith(hk)) || snaps[i-1];
-      const hourMap=Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes]));
-      for (const r of snap.rows) {
-        if (seriesMap[r.name]!==undefined)
-          seriesMap[r.name].push(hourMap[r.name]!==undefined ? r.votes-hourMap[r.name] : null);
       }
     }
   }
@@ -2179,12 +2195,13 @@ function renderDailyChart() {
   const stats = getDailyStats();
   if (!stats.length) { showChartEmpty("canvas-daily","legend-daily","暂无每日数据"); return; }
 
-  const {ctx,w,h} = setupCanvas(canvas);
+  const days0 = [...new Set(stats.map(s=>s.date))].sort();
+  const {ctx,w,h} = setupCanvas(canvas, days0.length);
   const pad = {l:72,r:20,t:24,b:32};
   const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
 
   // Get unique days sorted
-  const days = [...new Set(stats.map(s=>s.date))].sort();
+  const days = days0;
   // Get unique names
   const names = [...new Set(stats.map(s=>s.name))];
   const colors = getChartColors(names);
