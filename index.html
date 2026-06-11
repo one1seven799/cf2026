@@ -2279,12 +2279,13 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
   setGran("1min");
   document.getElementById("total-count").textContent=allSnapshots.length+" 次";
 
-  // 从云端恢复历史数据
+  // 从云端恢复历史数据，完成后自动启动追踪
   await loadFromKV();
+  startTracking();
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-10-v6";
+    const APP_VERSION = "2026-06-11-v1";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key

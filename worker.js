@@ -13,7 +13,6 @@ function json(data, status = 200) {
   });
 }
 
-// ─── KV 工具：用 list 分页读取所有 snap key ───────────────────────────────
 async function listAllSnapKeys(env) {
   const keys = [];
   let cursor;
@@ -25,7 +24,6 @@ async function listAllSnapKeys(env) {
   return keys;
 }
 
-// ─── 核心：抓票数并存 KV（每次只写1条，不维护 index）────────────────────────
 async function fetchAndSave(env) {
   const t = Date.now();
   const apiUrl = `${MGTV_API}&t=${t}&request_time=${t}`;
@@ -50,20 +48,48 @@ async function fetchAndSave(env) {
   const ts = new Date(Date.now() + 8 * 3600 * 1000)
     .toISOString().replace("T", " ").substring(0, 19);
 
+  // 读取最近一条快照，填 prevTs 和 hourStartTs
+  let prevTs = null;
+  let hourStartTs = null;
+  try {
+    const keys = await listAllSnapKeys(env);
+    if (keys.length > 0) {
+      keys.sort();
+      const lastKey = keys[keys.length - 1];
+      const lastRaw = await env.KV.get(lastKey);
+      if (lastRaw) {
+        const lastSnap = JSON.parse(lastRaw);
+        prevTs = lastSnap.ts;
+        // hourStartTs: 找本小时最早的一条
+        const curHourPrefix = ts.substring(0, 13);
+        const hourKeys = keys.filter(k => k.startsWith("snap:" + curHourPrefix));
+        if (hourKeys.length > 0) {
+          hourKeys.sort();
+          const hourRaw = await env.KV.get(hourKeys[0]);
+          if (hourRaw) hourStartTs = JSON.parse(hourRaw).ts;
+        } else {
+          hourStartTs = prevTs;
+        }
+      }
+    }
+  } catch (e) {
+    // 读取失败不影响主流程
+  }
+
   const snap = {
     ts,
     rows:      rows.filter(r => r.rank >= 2 && r.rank <= 4),
     watchRows: rows.filter(r => r.rank >= 5 && r.rank <= 9),
+    prevTs,
+    hourStartTs,
     savedBy:   "cron",
   };
 
-  // 只写这 1 次，不更新 index —— 节省 KV 写入配额
   await env.KV.put("snap:" + ts, JSON.stringify(snap));
   return snap;
 }
 
 export default {
-  // ─── HTTP 请求处理 ────────────────────────────────────────────────────────
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -71,15 +97,12 @@ export default {
       return new Response(null, { headers: CORS });
     }
 
-    // POST /snapshots — 网页开着时批量上传快照
     if (request.method === "POST" && url.pathname === "/snapshots") {
       try {
         const body = await request.json();
         const snaps = body.snapshots;
         if (!Array.isArray(snaps) || snaps.length === 0)
           return json({ ok: false, error: "empty" }, 400);
-
-        // 每条写1次，不维护 index
         await Promise.all(snaps.map(s => env.KV.put("snap:" + s.ts, JSON.stringify(s))));
         return json({ ok: true, saved: snaps.length });
       } catch (e) {
@@ -87,26 +110,22 @@ export default {
       }
     }
 
-    // GET /snapshots — 网页启动时拉取全量历史
     if (request.method === "GET" && url.pathname === "/snapshots") {
       try {
         const keys = await listAllSnapKeys(env);
         if (!keys.length) return json({ ok: true, snapshots: [] });
-
         const vals = await Promise.all(keys.map(k => env.KV.get(k)));
         const snapshots = vals
           .filter(Boolean)
           .map(v => { try { return JSON.parse(v); } catch { return null; } })
           .filter(Boolean)
           .sort((a, b) => a.ts.localeCompare(b.ts));
-
         return json({ ok: true, snapshots });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }
     }
 
-    // GET /cron-now — 手动触发一次抓取（调试用）
     if (request.method === "GET" && url.pathname === "/cron-now") {
       try {
         const snap = await fetchAndSave(env);
@@ -116,7 +135,6 @@ export default {
       }
     }
 
-    // GET / — 代理 mgtv API（网页直接抓票用）
     const t = Date.now();
     const apiUrl = `${MGTV_API}&t=${t}&request_time=${t}`;
     try {
@@ -135,7 +153,6 @@ export default {
     }
   },
 
-  // ─── Cron 定时触发（wrangler.toml 里配置频率）────────────────────────────
   async scheduled(event, env, ctx) {
     ctx.waitUntil(fetchAndSave(env));
   },
