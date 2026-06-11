@@ -2043,9 +2043,9 @@ function renderDeltaChart() {
           seriesMap[r.name].push(prevMap[r.name]!==undefined ? r.votes-prevMap[r.name] : null);
       }
     } else {
-      // hour mode: delta from start of that hour
+      // hour mode: delta from start of that hour (within filtered snaps)
       const hk=snap.ts.substring(0,13);
-      const hourSnap=allSnapshots.find(s=>s.ts.startsWith(hk)) || snaps[i-1];
+      const hourSnap=snaps.find(s=>s.ts.startsWith(hk)) || snaps[i-1];
       const hourMap=Object.fromEntries(hourSnap.rows.map(r=>[r.name,r.votes]));
       for (const r of snap.rows) {
         if (seriesMap[r.name]!==undefined)
