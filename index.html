@@ -410,7 +410,7 @@
   </div>
   <div class="header-right">
     <span class="bjt-clock" id="bjt-clock">北京 --:--:--</span>
-    <span style="font-family:var(--font-mono);font-size:0.65rem;color:var(--text3);opacity:0.6" title="当前网页版本">v12</span>
+    <span style="font-family:var(--font-mono);font-size:0.65rem;color:var(--text3);opacity:0.6" title="当前网页版本" id="app-version-label">v8</span>
     <span class="last-update" id="last-update-label">—</span>
     <div class="status-pill offline" id="status-pill">
       <div class="dot"></div>
@@ -2006,9 +2006,14 @@ function renderTrendChart() {
 
   const allVals = Object.values(seriesMap).flat();
   const minV=Math.min(...allVals), maxV=Math.max(...allVals);
-  const range=maxV-minV||1;
-  const { lo, hi, step } = niceRange(minV - range*0.08, maxV + range*0.08, true);
-  const steps = Math.max(1, Math.round((hi-lo)/step));
+  // Y轴按5000的整数倍取整：上限取大于maxV的下一个5000倍数，下限取小于minV的5000倍数
+  // 若数据量级很大导致刻度过多，则按5000的倍数放大步长（10000/15000/...），保持刻度数量合理
+  let YSTEP = 5000;
+  while (Math.ceil(maxV/YSTEP) - Math.floor(minV/YSTEP) > 10) YSTEP += 5000;
+  const lo = Math.max(0, Math.floor(minV / YSTEP) * YSTEP);
+  let hi = Math.ceil(maxV / YSTEP) * YSTEP;
+  if (hi === maxV) hi += YSTEP;
+  const steps = Math.max(1, Math.round((hi-lo)/YSTEP));
 
   ctx.clearRect(0,0,w,h);
   drawGrid(ctx,left,top,right,bottom,steps,"rgba(200,205,220,0.7)");
@@ -2572,7 +2577,9 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v12";
+    const APP_VERSION = "2026-06-11-v13";
+    const verLabel = document.getElementById("app-version-label");
+    if (verLabel) verLabel.textContent = APP_VERSION;
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
