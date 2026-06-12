@@ -1839,12 +1839,16 @@ function getChartContainerWidth() {
 // Compute canvas drawing width: at least the container width, but wide enough
 // to give each data point a minimum pixel width (so granularity changes are
 // visually distinct and the chart becomes horizontally scrollable when dense).
+// Capped to avoid exceeding browser canvas size limits (especially with devicePixelRatio).
 function getChartWidth(numPoints) {
   const containerW = getChartContainerWidth();
   if (!numPoints || numPoints < 2) return containerW;
-  const minPxPerPoint = 36; // minimum spacing per data point
+  const dpr = window.devicePixelRatio||1;
+  const minPxPerPoint = 8; // minimum spacing per data point
   const needed = numPoints * minPxPerPoint + 80; // + padding for axes
-  return Math.max(containerW, Math.round(needed));
+  // Keep canvas.width (css px * dpr) under a safe browser limit (~8000px)
+  const maxW = Math.floor(8000 / dpr);
+  return Math.max(containerW, Math.min(Math.round(needed), maxW));
 }
 
 function setupCanvas(canvas, numPoints) {
@@ -1945,7 +1949,7 @@ function renderTrendChart() {
   const canvas = document.getElementById("canvas-trend");
   const {ctx,w,h} = setupCanvas(canvas, snaps.length);
 
-  const pad = {l:60,r:20,t:20,b:28};
+  const pad = {l:60,r:20,t:20,b:32};
   const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
 
   const names = snaps[snaps.length-1].rows.map(r=>r.name);
