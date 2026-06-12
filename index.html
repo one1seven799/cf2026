@@ -1987,7 +1987,7 @@ function niceRange(lo0, hi0, allowNegative) {
   const step = Math.ceil(rawRange / (5 * mag)) * mag;
   let lo = Math.floor(lo0 / step) * step;
   let hi = Math.ceil(hi0 / step) * step;
-  if (!allowNegative && lo0 >= 0 && lo < 0) lo = 0;
+  if (!allowNegative && lo < 0) lo = 0;
   return { lo, hi, step };
 }
 
