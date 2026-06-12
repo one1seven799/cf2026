@@ -2248,7 +2248,7 @@ function renderDeltaChart() {
 
   // Smart Y-axis with nice round ticks (with Y-zoom applied to padding)
   const deltaRange = maxV - minV;
-  const { lo, hi, step } = niceRange(minV - deltaRange*0.08/deltaYZoom, maxV + (deltaRange*0.18+1)/deltaYZoom, minV < 0);
+  const { lo, hi, step } = niceRange(minV - deltaRange*0.08/deltaYZoom, maxV + (deltaRange*0.18+1)/deltaYZoom, false);
   const ticks = [];
   for (let v = lo; v <= hi + step * 0.001; v += step) ticks.push(Math.round(v));
 
@@ -2395,7 +2395,7 @@ function renderDailyChart() {
     const minV = Math.min(...allVals, 0);
 
     const dailyRange = maxV - minV;
-    const {lo,hi,step} = niceRange(minV-dailyRange*0.05/dailyYZoom, maxV+(dailyRange*0.18+1)/dailyYZoom, minV<0);
+    const {lo,hi,step} = niceRange(minV-dailyRange*0.05/dailyYZoom, maxV+(dailyRange*0.18+1)/dailyYZoom, false);
     const ticks=[]; for(let v=lo;v<=hi+step*0.001;v+=step) ticks.push(Math.round(v));
 
     const zeroY = top+(bottom-top)*(1-(0-lo)/(hi-lo));
