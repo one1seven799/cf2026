@@ -351,7 +351,16 @@
   .chart-panel { display: none; padding: 16px 16px 12px; }
   .chart-panel.active { display: block; }
   .chart-canvas-wrap { position: relative; width: 100%; height: 280px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
-  .chart-canvas-wrap canvas { height: 280px !important; display: block; }
+  .chart-canvas-wrap canvas { height: 280px !important; display: block; cursor: crosshair; }
+  .chart-tooltip {
+    position: absolute; pointer-events: none; z-index: 20;
+    background: rgba(20,20,35,0.92); color: #f0f0f5; border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px; padding: 6px 10px; font-family: var(--font-mono); font-size: 0.72rem;
+    line-height: 1.5; white-space: nowrap; display: none; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .chart-tooltip .tt-title { color: #aab0cc; margin-bottom: 2px; font-size: 0.68rem; }
+  .chart-tooltip .tt-row { display: flex; align-items: center; gap: 6px; }
+  .chart-tooltip .tt-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
   .chart-sub-controls { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
   .granularity-label { font-size: 0.7rem; color: var(--text3); margin-right: 2px; }
   .chart-legend {
@@ -561,7 +570,7 @@
         <button class="chart-mode-btn" id="trend-yzoom-in" title="放大（收紧Y轴范围）">+</button>
         <button class="btn-export-chart" onclick="exportChartImage('canvas-trend','整体趋势')">📷 导出图片</button>
       </div>
-      <div class="chart-canvas-wrap"><canvas id="canvas-trend" height="280"></canvas></div>
+      <div class="chart-canvas-wrap"><canvas id="canvas-trend" height="280"></canvas><div class="chart-tooltip" id="tooltip-trend"></div></div>
       <div class="chart-legend" id="legend-trend"></div>
     </div>
 
@@ -571,9 +580,13 @@
         <span class="granularity-label">图表类型：</span>
         <button class="chart-mode-btn active" id="delta-bar-btn" data-mode="bar">柱状图</button>
         <button class="chart-mode-btn" id="delta-line-btn" data-mode="line">折线图</button>
+        <span class="granularity-label" style="margin-left:10px">Y轴：</span>
+        <button class="chart-mode-btn" id="delta-yzoom-out" title="缩小（放宽Y轴范围）">−</button>
+        <button class="chart-mode-btn" id="delta-yzoom-reset" title="重置Y轴">重置</button>
+        <button class="chart-mode-btn" id="delta-yzoom-in" title="放大（收紧Y轴范围）">+</button>
         <button class="btn-export-chart" onclick="exportChartImage('canvas-delta','分时段涨幅')">📷 导出图片</button>
       </div>
-      <div class="chart-canvas-wrap"><canvas id="canvas-delta" height="280"></canvas></div>
+      <div class="chart-canvas-wrap"><canvas id="canvas-delta" height="280"></canvas><div class="chart-tooltip" id="tooltip-delta"></div></div>
       <div class="chart-legend" id="legend-delta"></div>
     </div>
 
@@ -583,9 +596,13 @@
         <span class="granularity-label">图表类型：</span>
         <button class="chart-mode-btn active" id="daily-bar-btn" data-mode="bar">柱状图（每日涨幅）</button>
         <button class="chart-mode-btn" id="daily-line-btn" data-mode="line">折线图（跨天趋势）</button>
+        <span class="granularity-label" style="margin-left:10px">Y轴：</span>
+        <button class="chart-mode-btn" id="daily-yzoom-out" title="缩小（放宽Y轴范围）">−</button>
+        <button class="chart-mode-btn" id="daily-yzoom-reset" title="重置Y轴">重置</button>
+        <button class="chart-mode-btn" id="daily-yzoom-in" title="放大（收紧Y轴范围）">+</button>
         <button class="btn-export-chart" onclick="exportChartImage('canvas-daily','每日汇总')">📷 导出图片</button>
       </div>
-      <div class="chart-canvas-wrap"><canvas id="canvas-daily" height="280"></canvas></div>
+      <div class="chart-canvas-wrap"><canvas id="canvas-daily" height="280"></canvas><div class="chart-tooltip" id="tooltip-daily"></div></div>
       <div class="chart-legend" id="legend-daily"></div>
     </div>
   </div>
@@ -794,6 +811,8 @@ let chartDayPick = "";
 // Y-axis zoom level for trend chart: 1 = default (auto fit to 5000-step range).
 // >1 = zoomed in (tighter range around data), <1 = zoomed out (wider range).
 let trendYZoom = 1;
+let deltaYZoom = 1;
+let dailyYZoom = 1;
 const TREND_YZOOM_MIN = 0.25, TREND_YZOOM_MAX = 4, TREND_YZOOM_STEP = 1.5;
 
 // Per-granularity notify histories (stored separately in memory)
@@ -1904,6 +1923,59 @@ function drawGrid(ctx, left, top, right, bottom, steps, color) {
   }
 }
 
+// ════════════════════════════════════════════
+// Chart hover tooltips
+// chartPoints[canvasId] = [{ x, label, items: [{name,color,value,fmtValue}] }, ...]
+// One entry per x-position (data point / bar group); mousemove finds the
+// closest entry by x and shows a tooltip listing all series values there.
+// ════════════════════════════════════════════
+const chartPoints = {};
+
+function setupChartTooltip(canvasId, tooltipId) {
+  const canvas = document.getElementById(canvasId);
+  const tooltip = document.getElementById(tooltipId);
+  const wrap = canvas.parentElement;
+  if (!canvas || !tooltip || canvas._tooltipBound) return;
+  canvas._tooltipBound = true;
+
+  const hide = () => { tooltip.style.display = "none"; };
+
+  canvas.addEventListener("mousemove", (e) => {
+    const pts = chartPoints[canvasId];
+    if (!pts || !pts.length) { hide(); return; }
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    // find closest point by x
+    let best = pts[0], bestDist = Math.abs(pts[0].x - mx);
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.abs(pts[i].x - mx);
+      if (d < bestDist) { bestDist = d; best = pts[i]; }
+    }
+    // only show if reasonably close (within ~30px)
+    if (bestDist > 30) { hide(); return; }
+
+    let html = `<div class="tt-title">${best.label}</div>`;
+    for (const it of best.items) {
+      html += `<div class="tt-row"><span class="tt-dot" style="background:${it.color}"></span>${it.name}: ${it.fmtValue}</div>`;
+    }
+    tooltip.innerHTML = html;
+    tooltip.style.display = "block";
+
+    // position near cursor, clamped within wrap bounds
+    const wrapRect = wrap.getBoundingClientRect();
+    let left = best.x + 12;
+    let top = e.clientY - wrapRect.top - 10;
+    const ttW = tooltip.offsetWidth, ttH = tooltip.offsetHeight;
+    if (left + ttW > wrap.scrollWidth - 4) left = best.x - ttW - 12;
+    if (top + ttH > wrap.clientHeight - 4) top = wrap.clientHeight - ttH - 4;
+    if (top < 4) top = 4;
+    tooltip.style.left = left + "px";
+    tooltip.style.top = top + "px";
+  });
+
+  canvas.addEventListener("mouseleave", hide);
+}
+
 // Compute a "nice" Y-axis range with round step sizes, based on the actual
 // min/max of the data (so the axis limit adapts to the data's magnitude).
 // allowNegative: if false, floor is clamped to 0 when the data minimum is >= 0.
@@ -2103,6 +2175,22 @@ function renderTrendChart() {
       <div class="${trendMode==='bar'?'legend-rect':'legend-dot'}" style="background:${trendColors[i]}"></div>${n}
     </div>`
   ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${snaps.length} 个数据点</div>`;
+
+  // populate hover tooltip data points
+  chartPoints["canvas-trend"] = snaps.map((snap,i) => {
+    const x = trendMode === "bar"
+      ? left + groupW*i + groupW/2
+      : left + (right-left)*i/(snaps.length-1||1);
+    return {
+      x,
+      label: snap.ts.substring(0,16),
+      items: names.map((name,ni) => ({
+        name, color: trendColors[ni],
+        value: seriesMap[name][i],
+        fmtValue: (seriesMap[name][i]??0).toLocaleString()
+      }))
+    };
+  });
 }
 
 // ════════════════════════════════════════════
@@ -2156,8 +2244,9 @@ function renderDeltaChart() {
   const groupW=(right-left)/(n||1);
   const barW=Math.max(2,Math.min(groupW/names.length-2,18));
 
-  // Smart Y-axis with nice round ticks
-  const { lo, hi, step } = niceRange(minV - (maxV - minV) * 0.08, maxV + (maxV - minV) * 0.18 + 1, minV < 0);
+  // Smart Y-axis with nice round ticks (with Y-zoom applied to padding)
+  const deltaRange = maxV - minV;
+  const { lo, hi, step } = niceRange(minV - deltaRange*0.08/deltaYZoom, maxV + (deltaRange*0.18+1)/deltaYZoom, minV < 0);
   const ticks = [];
   for (let v = lo; v <= hi + step * 0.001; v += step) ticks.push(Math.round(v));
 
@@ -2251,6 +2340,20 @@ function renderDeltaChart() {
     </div>`
   ).join("")+
   `<div class="legend-item" style="margin-left:auto;color:var(--text3)">${n} 个数据点 · ${granularity==="10min"?"10分钟":granularity==="5min"?"5分钟":granularity==="1min"?"1分钟":"整小时"}</div>`;
+
+  // populate hover tooltip data points
+  chartPoints["canvas-delta"] = labels.map((lbl,i) => ({
+    x: left+groupW*i+groupW/2,
+    label: lbl,
+    items: names.map((name,ni) => {
+      const v = seriesMap[name][i];
+      return {
+        name, color: deltaColors[ni],
+        value: v,
+        fmtValue: v===null ? "—" : (v>=0?"+":"")+v.toLocaleString()
+      };
+    })
+  }));
 }
 
 // ════════════════════════════════════════════
@@ -2289,7 +2392,8 @@ function renderDailyChart() {
     const maxV = Math.max(...allVals, 0);
     const minV = Math.min(...allVals, 0);
 
-    const {lo,hi,step} = niceRange(minV-(maxV-minV)*0.05, maxV+(maxV-minV)*0.18+1, minV<0);
+    const dailyRange = maxV - minV;
+    const {lo,hi,step} = niceRange(minV-dailyRange*0.05/dailyYZoom, maxV+(dailyRange*0.18+1)/dailyYZoom, minV<0);
     const ticks=[]; for(let v=lo;v<=hi+step*0.001;v+=step) ticks.push(Math.round(v));
 
     const zeroY = top+(bottom-top)*(1-(0-lo)/(hi-lo));
@@ -2338,6 +2442,16 @@ function renderDailyChart() {
       `<div class="legend-item"><div class="legend-rect" style="background:${colors[i]}"></div>${nm}</div>`
     ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${days.length} 天数据 · 每日总涨幅</div>`;
 
+    // populate hover tooltip data points
+    chartPoints["canvas-daily"] = days.map((d,i) => ({
+      x: left+groupW*i+groupW/2,
+      label: d,
+      items: names.map((name,ni) => {
+        const v = seriesMap[name][i];
+        return { name, color: colors[ni], value: v, fmtValue: (v>=0?"+":"")+v.toLocaleString() };
+      })
+    }));
+
   } else {
     // Line chart: cross-day vote count trend (end-of-day votes)
     const seriesMap = {};
@@ -2353,7 +2467,7 @@ function renderDailyChart() {
     if (!allVals.length) { showChartEmpty("canvas-daily","legend-daily","暂无数据"); return; }
     const minV=Math.min(...allVals), maxV=Math.max(...allVals);
     const range=maxV-minV||1;
-    const { lo, hi, step:ystep } = niceRange(minV - range*0.08, maxV + range*0.08, true);
+    const { lo, hi, step:ystep } = niceRange(minV - range*0.08/dailyYZoom, maxV + range*0.08/dailyYZoom, true);
     const steps = Math.max(1, Math.round((hi-lo)/ystep));
 
     ctx.clearRect(0,0,w,h);
@@ -2393,6 +2507,16 @@ function renderDailyChart() {
     leg.innerHTML = names.map((nm,i)=>
       `<div class="legend-item"><div class="legend-dot" style="background:${colors[i]}"></div>${nm}</div>`
     ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${days.length} 天 · 每日末票数趋势</div>`;
+
+    // populate hover tooltip data points
+    chartPoints["canvas-daily"] = days.map((d,i) => ({
+      x: left+(right-left)*i/(days.length-1||1),
+      label: d,
+      items: names.map((name,ni) => {
+        const v = seriesMap[name][i];
+        return { name, color: colors[ni], value: v, fmtValue: v===null ? "—" : v.toLocaleString() };
+      })
+    }));
   }
 }
 
@@ -2402,12 +2526,16 @@ function showChartEmpty(canvasId, legendId, msg) {
   if (canvas) { const {ctx,w,h}=setupCanvas(canvas); ctx.clearRect(0,0,w,h); }
   const leg=document.getElementById(legendId);
   if (leg) leg.innerHTML=`<span style="color:var(--text3);font-size:0.75rem">${msg}</span>`;
+  chartPoints[canvasId] = [];
 }
 
 function renderAllCharts() {
   if (allSnapshots.length<2) return;
   document.getElementById("chart-title").style.display="";
   document.getElementById("chart-section").style.display="";
+  setupChartTooltip("canvas-trend","tooltip-trend");
+  setupChartTooltip("canvas-delta","tooltip-delta");
+  setupChartTooltip("canvas-daily","tooltip-daily");
   const active=document.querySelector(".chart-panel.active")?.id;
   if (active==="panel-trend") renderTrendChart();
   if (active==="panel-delta") renderDeltaChart();
@@ -2474,6 +2602,32 @@ document.getElementById("trend-yzoom-out").addEventListener("click", () => {
 document.getElementById("trend-yzoom-reset").addEventListener("click", () => {
   trendYZoom = 1;
   renderTrendChart();
+});
+
+document.getElementById("delta-yzoom-in").addEventListener("click", () => {
+  deltaYZoom = Math.min(TREND_YZOOM_MAX, +(deltaYZoom * TREND_YZOOM_STEP).toFixed(3));
+  renderDeltaChart();
+});
+document.getElementById("delta-yzoom-out").addEventListener("click", () => {
+  deltaYZoom = Math.max(TREND_YZOOM_MIN, +(deltaYZoom / TREND_YZOOM_STEP).toFixed(3));
+  renderDeltaChart();
+});
+document.getElementById("delta-yzoom-reset").addEventListener("click", () => {
+  deltaYZoom = 1;
+  renderDeltaChart();
+});
+
+document.getElementById("daily-yzoom-in").addEventListener("click", () => {
+  dailyYZoom = Math.min(TREND_YZOOM_MAX, +(dailyYZoom * TREND_YZOOM_STEP).toFixed(3));
+  renderDailyChart();
+});
+document.getElementById("daily-yzoom-out").addEventListener("click", () => {
+  dailyYZoom = Math.max(TREND_YZOOM_MIN, +(dailyYZoom / TREND_YZOOM_STEP).toFixed(3));
+  renderDailyChart();
+});
+document.getElementById("daily-yzoom-reset").addEventListener("click", () => {
+  dailyYZoom = 1;
+  renderDailyChart();
 });
 
 // Trend mode
@@ -2615,7 +2769,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v14";
+    const APP_VERSION = "2026-06-11-v15";
     const verLabel = document.getElementById("app-version-label");
     if (verLabel) verLabel.textContent = APP_VERSION;
 
