@@ -730,22 +730,26 @@ function dbAdd(store, data) {
     r.onerror   = e => rej(e.target.error);
   });
 }
-// put = insert or overwrite（用于云端恢复，避免 id 冲突）
+// put = insert if ts not yet present（用于云端恢复，避免 id 冲突）
 // ts 索引是 unique 的；如果 ts 已存在则静默跳过（返回 null）
 function dbPut(store, data) {
   return new Promise((res, rej) => {
     const tx = db.transaction(store, "readwrite");
     const { id: _drop, ...dataNoId } = data;
-    const r = tx.objectStore(store).put(dataNoId);
+    // Use add (not put) so the unique ts index constraint is honoured correctly
+    const r = tx.objectStore(store).add(dataNoId);
     r.onsuccess = () => res(r.result);
     r.onerror = e => {
       if (e.target.error && e.target.error.name === "ConstraintError") {
-        e.preventDefault();  // prevent transaction abort
-        tx.abort();
+        e.preventDefault();  // prevent transaction abort on constraint violation
         res(null);           // ts already exists — skip silently
       } else {
         rej(e.target.error);
       }
+    };
+    tx.onabort = e => {
+      // If the transaction was aborted for any reason other than ConstraintError, resolve null
+      res(null);
     };
   });
 }
@@ -1712,18 +1716,16 @@ async function loadFromKV() {
 
     // Merge with local IndexedDB — remote wins for same ts
     const localTs = new Set(allSnapshots.map(s => s.ts));
-    const addedTs = new Set(); // track ts added in this batch to prevent duplicate puts
     let added = 0;
+    // Insert sequentially (not Promise.all) to avoid IDB transaction conflicts
     for (const snap of remoteDeduped) {
-      if (!localTs.has(snap.ts) && !addedTs.has(snap.ts)) {
-        const { id: _drop, ...snapNoId } = snap;
-        const putResult = await dbPut("snapshots", snapNoId);
-        if (putResult !== null) {
-          allSnapshots.push(snapNoId);
-          addedTs.add(snap.ts);
-          added++;
-        }
-        // putResult === null means ts already existed — skip silently
+      if (localTs.has(snap.ts)) continue;
+      const { id: _drop, ...snapNoId } = snap;
+      const putResult = await dbPut("snapshots", snapNoId);
+      if (putResult !== null) {
+        allSnapshots.push(snapNoId);
+        localTs.add(snap.ts); // keep set in sync
+        added++;
       }
     }
     allSnapshots.sort((a, b) => a.ts.localeCompare(b.ts));

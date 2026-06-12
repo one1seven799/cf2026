@@ -16,11 +16,14 @@ function json(data, status = 200) {
 async function listAllSnapKeys(env) {
   const keys = [];
   let cursor;
+  let pages = 0;
+  const MAX_PAGES = 10; // KV.list returns up to 1000 keys/page; 10 pages = 10000 keys max
   do {
     const res = await env.KV.list({ prefix: "snap:", cursor });
     for (const k of res.keys) keys.push(k.name);
     cursor = res.list_complete ? undefined : res.cursor;
-  } while (cursor);
+    pages++;
+  } while (cursor && pages < MAX_PAGES);
   return keys;
 }
 
@@ -103,8 +106,20 @@ export default {
         const snaps = body.snapshots;
         if (!Array.isArray(snaps) || snaps.length === 0)
           return json({ ok: false, error: "empty" }, 400);
-        await Promise.all(snaps.map(s => env.KV.put("snap:" + s.ts, JSON.stringify(s))));
-        return json({ ok: true, saved: snaps.length });
+
+        // Limit to avoid exceeding KV operation limits (free tier: 1000 ops/invocation)
+        const MAX_UPLOAD = 100;
+        const toSave = snaps.slice(-MAX_UPLOAD); // keep most recent if oversized
+
+        // Write in serial batches of 50 to avoid KV burst limits
+        const BATCH = 50;
+        let saved = 0;
+        for (let i = 0; i < toSave.length; i += BATCH) {
+          const batch = toSave.slice(i, i + BATCH);
+          await Promise.all(batch.map(s => env.KV.put("snap:" + s.ts, JSON.stringify(s))));
+          saved += batch.length;
+        }
+        return json({ ok: true, saved });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }
@@ -112,15 +127,31 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/snapshots") {
       try {
+        // Limit to most recent MAX_SNAP keys to avoid exceeding KV operation limits
+        // (Cloudflare free tier: 1000 KV ops per Worker invocation)
+        const MAX_SNAP = 400; // list + get = 2 ops each; 400*2 = 800, safely under 1000
+
         const keys = await listAllSnapKeys(env);
         if (!keys.length) return json({ ok: true, snapshots: [] });
-        const vals = await Promise.all(keys.map(k => env.KV.get(k)));
-        const snapshots = vals
-          .filter(Boolean)
-          .map(v => { try { return JSON.parse(v); } catch { return null; } })
-          .filter(Boolean)
-          .sort((a, b) => a.ts.localeCompare(b.ts));
-        return json({ ok: true, snapshots });
+
+        // Sort keys so we take the newest ones (keys are "snap:YYYY-MM-DD HH:MM:SS")
+        keys.sort();
+        const recentKeys = keys.slice(-MAX_SNAP);
+
+        // Fetch in small serial batches to avoid bursting KV ops
+        const BATCH = 50;
+        const snapshots = [];
+        for (let i = 0; i < recentKeys.length; i += BATCH) {
+          const batch = recentKeys.slice(i, i + BATCH);
+          const vals = await Promise.all(batch.map(k => env.KV.get(k)));
+          for (const v of vals) {
+            if (!v) continue;
+            try { snapshots.push(JSON.parse(v)); } catch {}
+          }
+        }
+
+        snapshots.sort((a, b) => a.ts.localeCompare(b.ts));
+        return json({ ok: true, snapshots, total_keys: keys.length, returned: snapshots.length });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
       }
