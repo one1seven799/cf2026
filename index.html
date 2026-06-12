@@ -1896,6 +1896,19 @@ function drawGrid(ctx, left, top, right, bottom, steps, color) {
   }
 }
 
+// Compute a "nice" Y-axis range with round step sizes, based on the actual
+// min/max of the data (so the axis limit adapts to the data's magnitude).
+// allowNegative: if false, floor is clamped to 0 when the data minimum is >= 0.
+function niceRange(lo0, hi0, allowNegative) {
+  const rawRange = (hi0 - lo0) || 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawRange)) - 1);
+  const step = Math.ceil(rawRange / (5 * mag)) * mag;
+  let lo = Math.floor(lo0 / step) * step;
+  let hi = Math.ceil(hi0 / step) * step;
+  if (!allowNegative && lo0 >= 0 && lo < 0) lo = 0;
+  return { lo, hi, step };
+}
+
 function drawYLabels(ctx, left, top, bottom, minV, maxV, steps, color, fmt) {
   ctx.fillStyle=color; ctx.font="12px 'Courier New',monospace"; ctx.textAlign="right";
   for (let i=0;i<=steps;i++) {
@@ -1994,11 +2007,12 @@ function renderTrendChart() {
   const allVals = Object.values(seriesMap).flat();
   const minV=Math.min(...allVals), maxV=Math.max(...allVals);
   const range=maxV-minV||1;
-  const lo=minV-range*0.08, hi=maxV+range*0.08;
+  const { lo, hi, step } = niceRange(minV - range*0.08, maxV + range*0.08, true);
+  const steps = Math.max(1, Math.round((hi-lo)/step));
 
   ctx.clearRect(0,0,w,h);
-  drawGrid(ctx,left,top,right,bottom,5,"rgba(200,205,220,0.7)");
-  drawYLabels(ctx,left,top,bottom,lo,hi,5,"#8888aa",fmtNum);
+  drawGrid(ctx,left,top,right,bottom,steps,"rgba(200,205,220,0.7)");
+  drawYLabels(ctx,left,top,bottom,lo,hi,steps,"#8888aa",fmtNum);
   if (labels.length>1) drawXLabels(ctx,labels,left,bottom,right,"#8888aa");
 
   const n = snaps.length;
@@ -2113,16 +2127,7 @@ function renderDeltaChart() {
   const barW=Math.max(2,Math.min(groupW/names.length-2,18));
 
   // Smart Y-axis with nice round ticks
-  function niceRange(lo0, hi0) {
-    const rawRange = hi0 - lo0 || 1;
-    const mag = Math.pow(10, Math.floor(Math.log10(rawRange)) - 1);
-    const step = Math.ceil(rawRange / (5 * mag)) * mag;
-    let lo = Math.floor(lo0 / step) * step;
-    let hi = Math.ceil(hi0 / step) * step;
-    if (minV >= 0 && lo < 0) lo = 0;
-    return { lo, hi, step };
-  }
-  const { lo, hi, step } = niceRange(minV - (maxV - minV) * 0.08, maxV + (maxV - minV) * 0.18 + 1);
+  const { lo, hi, step } = niceRange(minV - (maxV - minV) * 0.08, maxV + (maxV - minV) * 0.18 + 1, minV < 0);
   const ticks = [];
   for (let v = lo; v <= hi + step * 0.001; v += step) ticks.push(Math.round(v));
 
@@ -2254,16 +2259,7 @@ function renderDailyChart() {
     const maxV = Math.max(...allVals, 0);
     const minV = Math.min(...allVals, 0);
 
-    function niceRange(lo0,hi0) {
-      const rawRange=hi0-lo0||1;
-      const mag=Math.pow(10,Math.floor(Math.log10(rawRange))-1);
-      const step=Math.ceil(rawRange/(5*mag))*mag;
-      let lo=Math.floor(lo0/step)*step;
-      let hi=Math.ceil(hi0/step)*step;
-      if (minV>=0&&lo<0) lo=0;
-      return {lo,hi,step};
-    }
-    const {lo,hi,step} = niceRange(minV-(maxV-minV)*0.05, maxV+(maxV-minV)*0.18+1);
+    const {lo,hi,step} = niceRange(minV-(maxV-minV)*0.05, maxV+(maxV-minV)*0.18+1, minV<0);
     const ticks=[]; for(let v=lo;v<=hi+step*0.001;v+=step) ticks.push(Math.round(v));
 
     const zeroY = top+(bottom-top)*(1-(0-lo)/(hi-lo));
@@ -2327,11 +2323,12 @@ function renderDailyChart() {
     if (!allVals.length) { showChartEmpty("canvas-daily","legend-daily","暂无数据"); return; }
     const minV=Math.min(...allVals), maxV=Math.max(...allVals);
     const range=maxV-minV||1;
-    const lo=minV-range*0.08, hi=maxV+range*0.08;
+    const { lo, hi, step:ystep } = niceRange(minV - range*0.08, maxV + range*0.08, true);
+    const steps = Math.max(1, Math.round((hi-lo)/ystep));
 
     ctx.clearRect(0,0,w,h);
-    drawGrid(ctx,left,top,right,bottom,5,"rgba(200,205,220,0.7)");
-    drawYLabels(ctx,left,top,bottom,lo,hi,5,"#8888aa",fmtNum);
+    drawGrid(ctx,left,top,right,bottom,steps,"rgba(200,205,220,0.7)");
+    drawYLabels(ctx,left,top,bottom,lo,hi,steps,"#8888aa",fmtNum);
     // X labels (dates)
     ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
     const step2=Math.max(1,Math.floor(days.length/6));
@@ -2575,7 +2572,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v11";
+    const APP_VERSION = "2026-06-11-v12";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
