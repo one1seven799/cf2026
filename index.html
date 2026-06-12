@@ -378,6 +378,7 @@
     color: var(--text2); font-family: var(--font-body); cursor: pointer;
   }
   .chart-days-select:focus { outline: none; border-color: #1a5fa8; }
+  .chart-days-select:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* export chart btn */
   .btn-export-chart {
@@ -533,6 +534,12 @@
             <option value="7" selected>近7天</option>
             <option value="14">近14天</option>
             <option value="0">全部</option>
+          </select>
+        </div>
+        <div class="chart-days-filter">
+          <span class="chart-days-label">日期</span>
+          <select id="chart-day-pick" class="chart-days-select">
+            <option value="" selected>不限</option>
           </select>
         </div>
         <button class="chart-mode-btn active" id="gran-1min">1分钟</button>
@@ -778,6 +785,8 @@ let summaryWindow = 1;
 let notifyTab = "all";
 // chart days filter: 0 = all, N = last N days
 let chartDays = 7;
+// specific day filter for charts: "" = no specific day (use chartDays range), else "YYYY-MM-DD"
+let chartDayPick = "";
 
 // Per-granularity notify histories (stored separately in memory)
 // notifyLines = all entries; notifyLines1min, notifyLines5min, notifyLines10min, notifyLinesHour
@@ -1158,6 +1167,22 @@ function renderDiffRow(allRows) {
   // restore selection if still valid
   if ([...sel.options].some(o=>o.value===curVal)) sel.value = curVal;
   else sel.value = "today";
+
+  // populate chart day-pick filter
+  const chartSel = document.getElementById("chart-day-pick");
+  if (chartSel) {
+    const chartCurVal = chartSel.value;
+    chartSel.innerHTML = '<option value="">不限</option>';
+    allDays.slice().reverse().forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = (d === todayPrefix ? "今天 " : "") + d;
+      chartSel.appendChild(opt);
+    });
+    if ([...chartSel.options].some(o=>o.value===chartCurVal)) chartSel.value = chartCurVal;
+    else chartSel.value = "";
+    chartDayPick = chartSel.value;
+  }
 }
 
 // ════════════════════════════════════════════
@@ -1901,7 +1926,10 @@ function fmtNum(v) {
 function getFilteredSnapshots() {
   // First filter by days window
   let snaps = allSnapshots;
-  if (chartDays > 0 && snaps.length > 0) {
+  if (chartDayPick) {
+    // Specific day selected — overrides the relative-range filter
+    snaps = snaps.filter(s => s.ts.startsWith(chartDayPick));
+  } else if (chartDays > 0 && snaps.length > 0) {
     const lastTs = snaps[snaps.length - 1].ts;
     // Parse last timestamp as a date and subtract chartDays
     const lastDate = new Date(lastTs.replace(" ", "T") + "Z");
@@ -2401,6 +2429,13 @@ document.getElementById("chart-days-select").addEventListener("change", e => {
   renderAllCharts();
 });
 
+document.getElementById("chart-day-pick").addEventListener("change", e => {
+  chartDayPick = e.target.value;
+  // disable the relative-range selector while a specific day is picked, for clarity
+  document.getElementById("chart-days-select").disabled = !!chartDayPick;
+  renderAllCharts();
+});
+
 // Trend mode
 document.getElementById("trend-bar-btn").addEventListener("click",()=>{
   trendMode="bar";
@@ -2540,7 +2575,7 @@ window.addEventListener("online", ()=>{ if (running)  setStatus("running","追�
 
   if ("serviceWorker" in navigator) {
     // 版本号：每次更新 index.html 时修改此字符串，SW 会自动清除旧缓存
-    const APP_VERSION = "2026-06-11-v8";
+    const APP_VERSION = "2026-06-11-v11";
 
     navigator.serviceWorker.register("sw.js").then(reg => {
       // 把版本号传给 SW，SW 用它作为缓存 key
