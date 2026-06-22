@@ -551,6 +551,18 @@
             <option value="" selected>不限</option>
           </select>
         </div>
+        <div class="chart-days-filter">
+          <span class="chart-days-label">显示</span>
+          <select id="chart-rank-count" class="chart-days-select">
+            <option value="3" selected>前3名</option>
+            <option value="4">前4名</option>
+            <option value="5">前5名</option>
+            <option value="6">前6名</option>
+            <option value="7">前7名</option>
+            <option value="8">前8名</option>
+            <option value="9">前9名</option>
+          </select>
+        </div>
         <button class="chart-mode-btn active" id="gran-1min">1分钟</button>
         <button class="chart-mode-btn" id="gran-5min">5分钟</button>
         <button class="chart-mode-btn" id="gran-10min">10分钟</button>
@@ -812,6 +824,8 @@ let notifyTab = "all";
 let chartDays = 7;
 // specific day filter for charts: "" = no specific day (use chartDays range), else "YYYY-MM-DD"
 let chartDayPick = "";
+// how many top-ranked lines to show in charts (1–9); uses rank position, not names
+let chartRankCount = 3;
 // Y-axis zoom level for trend chart: 1 = default (auto fit to 5000-step range).
 // >1 = zoomed in (tighter range around data), <1 = zoomed out (wider range).
 let trendYZoom = 1;
@@ -1856,8 +1870,29 @@ function rebuildNotifyFromHistory() {
 // ════════════════════════════════════════════
 // Chart helpers
 // ════════════════════════════════════════════
-// Chart colors: 张月=blue, 陈瑶=pink, others varied
-const CHART_COLORS_DEFAULT = ["#1a5fa8","#e8427a","#1a9e6a","#d07020","#7c5cbf","#0a8fa0","#c04060"];
+// Get all rows (rows + watchRows) from a snapshot, sorted by rank, limited to chartRankCount
+// Returns [{rank, name, votes}, ...] where rank is used as the display key
+function getSnapAllRows(snap) {
+  const all = [...(snap.rows || []), ...(snap.watchRows || [])];
+  all.sort((a, b) => a.rank - b.rank);
+  return all.slice(0, chartRankCount);
+}
+
+// Get rank label for display (e.g. "第2名")
+function rankLabel(rank) { return `第${rank}名`; }
+
+// Color by rank position index (0-based), consistent regardless of who's in that position
+const RANK_COLORS = ["#1a5fa8","#e8427a","#1a9e6a","#d07020","#7c5cbf","#0a8fa0","#c04060","#8b6914","#206090"];
+function getRankColors(count) {
+  return Array.from({length: count}, (_, i) => RANK_COLORS[i % RANK_COLORS.length]);
+}
+function getRankColorsDim(count) {
+  return getRankColors(count).map(c => {
+    const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16);
+    return `rgba(${r},${g},${b},0.1)`;
+  });
+}
+
 const CHART_COLORS_DIM     = ["rgba(26,95,168,0.1)","rgba(232,66,122,0.1)","rgba(26,158,106,0.1)"];
 
 function getChartColors(names) {
@@ -2075,36 +2110,37 @@ function renderTrendChart() {
   const pad = {l:60,r:20,t:20,b:32};
   const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
 
-  const names = snaps[snaps.length-1].rows.map(r=>r.name);
-  const seriesMap = {};
-  names.forEach(n=>{ seriesMap[n]=[]; });
-  const labels=[];
+  // Determine which ranks exist across all snapshots, limited to chartRankCount
+  // Use rank as stable key, display as "第X名"
+  const rankSet = new Set();
+  snaps.forEach(snap => getSnapAllRows(snap).forEach(r => rankSet.add(r.rank)));
+  const ranks = [...rankSet].sort((a,b)=>a-b).slice(0, chartRankCount);
+
+  // Build series: for each rank, collect votes at each snap (null if rank absent)
+  const seriesMap = {}; // rank -> [votes|null, ...]
+  ranks.forEach(rk => { seriesMap[rk] = []; });
+  const labels = [];
   for (const snap of snaps) {
     labels.push(hm(snap.ts));
-    for (const r of snap.rows) {
-      if (seriesMap[r.name]!==undefined) seriesMap[r.name].push(r.votes);
-    }
+    const rowMap = {};
+    getSnapAllRows(snap).forEach(r => { rowMap[r.rank] = r.votes; });
+    ranks.forEach(rk => seriesMap[rk].push(rowMap[rk] ?? null));
   }
 
-  const allVals = Object.values(seriesMap).flat();
+  const allVals = Object.values(seriesMap).flat().filter(v => v !== null);
+  if (!allVals.length) { showChartEmpty("canvas-trend","legend-trend","数据不足"); return; }
   const minV=Math.min(...allVals), maxV=Math.max(...allVals);
   const dataRange = (maxV - minV) || 1;
 
-  // 基础刻度步长：按5000的整数倍，数据量级很大时自动放大（10000/15000/...）
   let baseStep = 5000;
   while (Math.ceil(maxV/baseStep) - Math.floor(minV/baseStep) > 10) baseStep += 5000;
-
-  // Y轴缩放：trendYZoom>1 收紧范围（放大数据细节），<1 放宽范围
-  // 缩放同时影响留白比例和刻度步长，让缩放观感更明显
   const yPad = dataRange * 0.1 / trendYZoom;
   const YSTEP = Math.max(100, Math.round(baseStep / trendYZoom / 100) * 100);
-
   let lo = Math.floor((minV - yPad) / YSTEP) * YSTEP;
   let hi = Math.ceil((maxV + yPad) / YSTEP) * YSTEP;
   if (lo < 0 && minV >= 0) lo = 0;
   if (hi <= maxV) hi += YSTEP;
   let steps = Math.round((hi-lo)/YSTEP);
-  // 如果刻度数超出合理范围，按比例放大YSTEP并重新计算边界，保持视觉一致
   if (steps > 12) {
     const factor = Math.ceil(steps/10);
     const newStep = YSTEP*factor;
@@ -2121,15 +2157,16 @@ function renderTrendChart() {
 
   const n = snaps.length;
   const groupW = (right-left) / (n || 1);
-  const barW = Math.max(2, Math.min(groupW / names.length - 2, 20));
-  const colors = getChartColors(names);
-  const dimColors = getChartColorsDim(names);
+  const barW = Math.max(2, Math.min(groupW / ranks.length - 2, 20));
+  const colors = getRankColors(ranks.length);
+  const dimColors = getRankColorsDim(ranks.length);
 
   if (trendMode === "bar") {
-    names.forEach((name,ni) => {
-      const series = seriesMap[name];
-      series.forEach((v,i) => {
-        const cx = left + groupW*i + groupW/2 + (ni-(names.length-1)/2)*(barW+2);
+    ranks.forEach((rk, ni) => {
+      const series = seriesMap[rk];
+      series.forEach((v, i) => {
+        if (v === null) return;
+        const cx = left + groupW*i + groupW/2 + (ni-(ranks.length-1)/2)*(barW+2);
         const barH = Math.abs((bottom-top)*((v-lo)/(hi-lo)));
         const y = bottom - barH;
         ctx.fillStyle = colors[ni];
@@ -2140,56 +2177,54 @@ function renderTrendChart() {
     });
   } else {
     // line mode
-    names.forEach((name,ni) => {
-      const series = seriesMap[name];
-      if (!series.length) return;
+    ranks.forEach((rk, ni) => {
+      const series = seriesMap[rk];
       const color = colors[ni];
-      const pts = series.map((v,i) => ({
+      const pts = series.map((v,i) => v === null ? null : ({
         x: left+(right-left)*i/(series.length-1||1),
         y: top+(bottom-top)*(1-(v-lo)/(hi-lo))
-      }));
+      })).filter(Boolean);
+      if (!pts.length) return;
       // fill area
       ctx.beginPath();
-      ctx.moveTo(pts[0].x,bottom);
-      pts.forEach(p=>ctx.lineTo(p.x,p.y));
-      ctx.lineTo(pts[pts.length-1].x,bottom);
+      ctx.moveTo(pts[0].x, bottom);
+      pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(pts[pts.length-1].x, bottom);
       ctx.closePath();
       ctx.fillStyle = dimColors[ni]||"rgba(100,100,200,0.05)";
       ctx.fill();
       // smooth line
-      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
       for (let i=1;i<pts.length;i++) {
         const mx=(pts[i-1].x+pts[i].x)/2;
         ctx.bezierCurveTo(mx,pts[i-1].y,mx,pts[i].y,pts[i].x,pts[i].y);
       }
       ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
-      // last dot
       const lp=pts[pts.length-1];
       ctx.beginPath(); ctx.arc(lp.x,lp.y,4,0,Math.PI*2);
       ctx.fillStyle=color; ctx.fill();
     });
   }
 
-  const leg=document.getElementById("legend-trend");
-  const trendColors=getChartColors(names);
-  leg.innerHTML=names.map((n,i)=>
+  const leg = document.getElementById("legend-trend");
+  leg.innerHTML = ranks.map((rk,i) =>
     `<div class="legend-item">
-      <div class="${trendMode==='bar'?'legend-rect':'legend-dot'}" style="background:${trendColors[i]}"></div>${n}
+      <div class="${trendMode==='bar'?'legend-rect':'legend-dot'}" style="background:${colors[i]}"></div>${rankLabel(rk)}
     </div>`
-  ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${snaps.length} 个数据点</div>`;
+  ).join("") + `<div class="legend-item" style="margin-left:auto;color:var(--text3)">${snaps.length} 个数据点</div>`;
 
-  // populate hover tooltip data points
-  chartPoints["canvas-trend"] = snaps.map((snap,i) => {
+  // hover tooltip
+  chartPoints["canvas-trend"] = snaps.map((snap, i) => {
     const x = trendMode === "bar"
       ? left + groupW*i + groupW/2
       : left + (right-left)*i/(snaps.length-1||1);
     return {
       x,
       label: snap.ts.substring(0,16),
-      items: names.map((name,ni) => ({
-        name, color: trendColors[ni],
-        value: seriesMap[name][i],
-        fmtValue: (seriesMap[name][i]??0).toLocaleString()
+      items: ranks.map((rk, ni) => ({
+        name: rankLabel(rk), color: colors[ni],
+        value: seriesMap[rk][i],
+        fmtValue: seriesMap[rk][i] === null ? "—" : (seriesMap[rk][i]??0).toLocaleString()
       }))
     };
   });
@@ -2204,35 +2239,36 @@ function renderDeltaChart() {
   const canvas=document.getElementById("canvas-delta");
   const {ctx,w,h}=setupCanvas(canvas, snaps.length-1);
 
-  const names=snaps[snaps.length-1].rows.map(r=>r.name);
+  // Determine ranks to show
+  const rankSet = new Set();
+  snaps.forEach(snap => getSnapAllRows(snap).forEach(r => rankSet.add(r.rank)));
+  const ranks = [...rankSet].sort((a,b)=>a-b).slice(0, chartRankCount);
+
   const labels=[];
   const seriesMap={};
-  names.forEach(n=>{ seriesMap[n]=[]; });
+  ranks.forEach(rk=>{ seriesMap[rk]=[]; });
 
   for (let i=1;i<snaps.length;i++) {
     const snap=snaps[i];
     labels.push(hm(snap.ts));
+    const curMap={};
+    getSnapAllRows(snap).forEach(r=>{ curMap[r.rank]=r.votes; });
+
     if (granularity==="hour") {
-      // hour mode: delta from the start-of-hour snapshot (1-min resolution lookup)
       let baseSnap = allSnapshots.find(s => s.ts === snap.hourStartTs);
       if (!baseSnap) {
         const hk = snap.ts.substring(0,13);
         baseSnap = allSnapshots.find(s => s.ts.startsWith(hk));
       }
       if (!baseSnap) baseSnap = snaps[i-1];
-      const baseMap=Object.fromEntries(baseSnap.rows.map(r=>[r.name,r.votes]));
-      for (const r of snap.rows) {
-        if (seriesMap[r.name]!==undefined)
-          seriesMap[r.name].push(baseMap[r.name]!==undefined ? r.votes-baseMap[r.name] : null);
-      }
+      const baseMap={};
+      getSnapAllRows(baseSnap).forEach(r=>{ baseMap[r.rank]=r.votes; });
+      ranks.forEach(rk => seriesMap[rk].push(baseMap[rk]!==undefined && curMap[rk]!==undefined ? curMap[rk]-baseMap[rk] : null));
     } else {
-      // delta from previous snap
       const prevSnap=snaps[i-1];
-      const prevMap=Object.fromEntries(prevSnap.rows.map(r=>[r.name,r.votes]));
-      for (const r of snap.rows) {
-        if (seriesMap[r.name]!==undefined)
-          seriesMap[r.name].push(prevMap[r.name]!==undefined ? r.votes-prevMap[r.name] : null);
-      }
+      const prevMap={};
+      getSnapAllRows(prevSnap).forEach(r=>{ prevMap[r.rank]=r.votes; });
+      ranks.forEach(rk => seriesMap[rk].push(prevMap[rk]!==undefined && curMap[rk]!==undefined ? curMap[rk]-prevMap[rk] : null));
     }
   }
 
@@ -2244,9 +2280,8 @@ function renderDeltaChart() {
   const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
   const n=labels.length;
   const groupW=(right-left)/(n||1);
-  const barW=Math.max(2,Math.min(groupW/names.length-2,18));
+  const barW=Math.max(2,Math.min(groupW/ranks.length-2,18));
 
-  // Smart Y-axis with nice round ticks (with Y-zoom applied to padding)
   const deltaRange = maxV - minV;
   const { lo, hi, step } = niceRange(minV - deltaRange*0.08/deltaYZoom, maxV + (deltaRange*0.18+1)/deltaYZoom, false);
   const ticks = [];
@@ -2254,32 +2289,28 @@ function renderDeltaChart() {
 
   const zeroY=top+(bottom-top)*(1-(0-lo)/(hi-lo));
   const alertThresh=granularity==="10min"?ALERT_10MIN:ALERT_HOURLY;
-  const deltaColors = getChartColors(names);
+  const deltaColors = getRankColors(ranks.length);
+  const deltaDimColors = getRankColorsDim(ranks.length);
 
   ctx.clearRect(0,0,w,h);
 
-  // Grid at ticks
   ctx.strokeStyle="rgba(200,205,220,0.7)"; ctx.lineWidth=1;
   ticks.forEach(v => {
     const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
     if (y>=top&&y<=bottom) { ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(right,y); ctx.stroke(); }
   });
 
-  // Y labels
   ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="right";
   ticks.forEach(v => {
     const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
     if (y>=top-2&&y<=bottom+2) ctx.fillText((v>=0?"+":"")+fmtNum(v), left-6, y+4);
   });
 
-  // X labels
   if (labels.length>1) drawXLabels(ctx,labels,left,bottom,right,"#8888aa");
 
-  // zero line
   ctx.strokeStyle="rgba(100,100,150,0.35)"; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(left,zeroY); ctx.lineTo(right,zeroY); ctx.stroke();
 
-  // alert line
   const alertY=top+(bottom-top)*(1-(alertThresh-lo)/(hi-lo));
   if (alertY>top&&alertY<bottom) {
     ctx.strokeStyle="rgba(217,48,80,0.45)"; ctx.setLineDash([4,4]); ctx.lineWidth=1;
@@ -2290,11 +2321,11 @@ function renderDeltaChart() {
   }
 
   if (deltaMode==="bar") {
-    names.forEach((name,ni)=>{
-      const series=seriesMap[name];
+    ranks.forEach((rk,ni)=>{
+      const series=seriesMap[rk];
       series.forEach((v,i)=>{
         if (v===null) return;
-        const cx=left+groupW*i+groupW/2+(ni-(names.length-1)/2)*(barW+2);
+        const cx=left+groupW*i+groupW/2+(ni-(ranks.length-1)/2)*(barW+2);
         const barH=Math.abs((bottom-top)*((v-0)/(hi-lo)));
         const y=v>=0?zeroY-barH:zeroY;
         ctx.fillStyle=deltaColors[ni];
@@ -2304,21 +2335,17 @@ function renderDeltaChart() {
       });
     });
   } else {
-    // line
-    names.forEach((name,ni)=>{
-      const series=seriesMap[name];
+    ranks.forEach((rk,ni)=>{
+      const series=seriesMap[rk];
       const pts=[];
       series.forEach((v,i)=>{ if(v!==null) pts.push({x:left+groupW*(i+0.5),y:top+(bottom-top)*(1-(v-lo)/(hi-lo))}); });
       if (pts.length<2) return;
-      // fill area under line
-      const dimColor=getChartColorsDim(names)[ni];
       ctx.beginPath();
       ctx.moveTo(pts[0].x,zeroY);
       pts.forEach(p=>ctx.lineTo(p.x,p.y));
       ctx.lineTo(pts[pts.length-1].x,zeroY);
       ctx.closePath();
-      ctx.fillStyle=dimColor; ctx.fill();
-      // smooth line
+      ctx.fillStyle=deltaDimColors[ni]; ctx.fill();
       ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
       for (let i=1;i<pts.length;i++) {
         const mx=(pts[i-1].x+pts[i].x)/2;
@@ -2326,7 +2353,6 @@ function renderDeltaChart() {
       }
       ctx.strokeStyle=deltaColors[ni]; ctx.lineWidth=2; ctx.globalAlpha=0.9; ctx.stroke();
       ctx.globalAlpha=1;
-      // dots
       pts.forEach(p=>{
         ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2);
         ctx.fillStyle="#fff"; ctx.fill();
@@ -2336,21 +2362,20 @@ function renderDeltaChart() {
   }
 
   const leg=document.getElementById("legend-delta");
-  leg.innerHTML=names.map((nm,i)=>
+  leg.innerHTML=ranks.map((rk,i)=>
     `<div class="legend-item">
-      <div class="${deltaMode==='line'?'legend-dot':'legend-rect'}" style="background:${deltaColors[i]}"></div>${nm}
+      <div class="${deltaMode==='line'?'legend-dot':'legend-rect'}" style="background:${deltaColors[i]}"></div>${rankLabel(rk)}
     </div>`
   ).join("")+
   `<div class="legend-item" style="margin-left:auto;color:var(--text3)">${n} 个数据点 · ${granularity==="10min"?"10分钟":granularity==="5min"?"5分钟":granularity==="1min"?"1分钟":"整小时"}</div>`;
 
-  // populate hover tooltip data points
   chartPoints["canvas-delta"] = labels.map((lbl,i) => ({
     x: left+groupW*i+groupW/2,
     label: lbl,
-    items: names.map((name,ni) => {
-      const v = seriesMap[name][i];
+    items: ranks.map((rk,ni) => {
+      const v = seriesMap[rk][i];
       return {
-        name, color: deltaColors[ni],
+        name: rankLabel(rk), color: deltaColors[ni],
         value: v,
         fmtValue: v===null ? "—" : (v>=0?"+":"")+v.toLocaleString()
       };
@@ -2364,106 +2389,97 @@ function renderDeltaChart() {
 function renderDailyChart() {
   const canvas = document.getElementById("canvas-daily");
   const leg = document.getElementById("legend-daily");
-  const stats = getDailyStats();
-  if (!stats.length) { showChartEmpty("canvas-daily","legend-daily","暂无每日数据"); return; }
 
-  const days0 = [...new Set(stats.map(s=>s.date))].sort();
-  const {ctx,w,h} = setupCanvas(canvas, days0.length);
+  // Build daily stats by rank (not by name)
+  const dayMap = {};
+  for (const snap of allSnapshots) {
+    const d = snap.ts.substring(0,10);
+    if (!dayMap[d]) dayMap[d] = [];
+    dayMap[d].push(snap);
+  }
+  const days = Object.keys(dayMap).sort();
+  if (!days.length) { showChartEmpty("canvas-daily","legend-daily","暂无每日数据"); return; }
+
+  // Determine which ranks to display
+  const rankSet = new Set();
+  allSnapshots.forEach(snap => getSnapAllRows(snap).forEach(r => rankSet.add(r.rank)));
+  const ranks = [...rankSet].sort((a,b)=>a-b).slice(0, chartRankCount);
+
+  // For each day, get first/last snapshot, build rank->votes maps
+  const dailyByRank = {}; // rank -> [{date, startVotes, endVotes, gain}]
+  ranks.forEach(rk => { dailyByRank[rk] = []; });
+  for (const d of days) {
+    const snaps = dayMap[d].sort((a,b)=>a.ts.localeCompare(b.ts));
+    const first = snaps[0], last = snaps[snaps.length-1];
+    const firstMap = {}; getSnapAllRows(first).forEach(r => { firstMap[r.rank] = r.votes; });
+    const lastMap  = {}; getSnapAllRows(last).forEach(r  => { lastMap[r.rank]  = r.votes; });
+    ranks.forEach(rk => {
+      const sv = firstMap[rk], ev = lastMap[rk];
+      dailyByRank[rk].push(sv !== undefined && ev !== undefined ? {startVotes:sv, endVotes:ev, gain:ev-sv} : null);
+    });
+  }
+
+  const {ctx,w,h} = setupCanvas(canvas, days.length);
   const pad = {l:72,r:20,t:24,b:32};
   const left=pad.l, right=w-pad.r, top=pad.t, bottom=h-pad.b;
-
-  // Get unique days sorted
-  const days = days0;
-  // Get unique names
-  const names = [...new Set(stats.map(s=>s.name))];
-  const colors = getChartColors(names);
-  const dimColors = getChartColorsDim(names);
+  const colors = getRankColors(ranks.length);
+  const dimColors = getRankColorsDim(ranks.length);
 
   if (dailyChartMode === "bar") {
-    // Bar chart: each day's total gain per person
+    // Bar: each day's gain per rank
     const seriesMap = {};
-    names.forEach(n => { seriesMap[n] = []; });
-    for (const d of days) {
-      for (const nm of names) {
-        const row = stats.find(s => s.date===d && s.name===nm);
-        seriesMap[nm].push(row ? row.gain : 0);
-      }
-    }
+    ranks.forEach(rk => { seriesMap[rk] = dailyByRank[rk].map(d => d ? d.gain : 0); });
 
     const allVals = Object.values(seriesMap).flat();
     const maxV = Math.max(...allVals, 0);
     const minV = Math.min(...allVals, 0);
-
     const dailyRange = maxV - minV;
     const {lo,hi,step} = niceRange(minV-dailyRange*0.05/dailyYZoom, maxV+(dailyRange*0.18+1)/dailyYZoom, false);
     const ticks=[]; for(let v=lo;v<=hi+step*0.001;v+=step) ticks.push(Math.round(v));
-
     const zeroY = top+(bottom-top)*(1-(0-lo)/(hi-lo));
     const n = days.length;
     const groupW = (right-left)/(n||1);
-    const barW = Math.max(3, Math.min(groupW/names.length-2, 28));
+    const barW = Math.max(3, Math.min(groupW/ranks.length-2, 28));
 
     ctx.clearRect(0,0,w,h);
-
-    // Grid
     ctx.strokeStyle="rgba(200,205,220,0.7)"; ctx.lineWidth=1;
-    ticks.forEach(v=>{
-      const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
-      if(y>=top&&y<=bottom){ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();}
-    });
-    // Y labels
+    ticks.forEach(v=>{ const y=top+(bottom-top)*(1-(v-lo)/(hi-lo)); if(y>=top&&y<=bottom){ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();} });
     ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="right";
-    ticks.forEach(v=>{
-      const y=top+(bottom-top)*(1-(v-lo)/(hi-lo));
-      if(y>=top-2&&y<=bottom+2) ctx.fillText((v>=0?"+":"")+fmtNum(v),left-6,y+4);
-    });
-    // X labels (dates)
+    ticks.forEach(v=>{ const y=top+(bottom-top)*(1-(v-lo)/(hi-lo)); if(y>=top-2&&y<=bottom+2) ctx.fillText((v>=0?"+":"")+fmtNum(v),left-6,y+4); });
     ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
     const step2=Math.max(1,Math.floor(days.length/6));
-    days.forEach((d,i)=>{if(i%step2===0){const x=left+groupW*i+groupW/2;ctx.fillText(d.substring(5),x,bottom+16);}});
-
-    // Zero line
+    days.forEach((d,i)=>{ if(i%step2===0){ const x=left+groupW*i+groupW/2; ctx.fillText(d.substring(5),x,bottom+16); } });
     ctx.strokeStyle="rgba(100,100,150,0.35)"; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(left,zeroY); ctx.lineTo(right,zeroY); ctx.stroke();
 
-    // Bars
-    names.forEach((name,ni)=>{
-      const series=seriesMap[name];
+    ranks.forEach((rk,ni)=>{
+      const series=seriesMap[rk];
       series.forEach((v,i)=>{
-        const cx=left+groupW*i+groupW/2+(ni-(names.length-1)/2)*(barW+2);
+        const cx=left+groupW*i+groupW/2+(ni-(ranks.length-1)/2)*(barW+2);
         const barH=Math.abs((bottom-top)*((v-0)/(hi-lo)));
         const y=v>=0?zeroY-barH:zeroY;
-        ctx.fillStyle=colors[ni];
-        ctx.globalAlpha=0.82;
+        ctx.fillStyle=colors[ni]; ctx.globalAlpha=0.82;
         ctx.fillRect(cx-barW/2,y,barW,Math.max(barH,1));
         ctx.globalAlpha=1;
       });
     });
 
-    leg.innerHTML = names.map((nm,i)=>
-      `<div class="legend-item"><div class="legend-rect" style="background:${colors[i]}"></div>${nm}</div>`
+    leg.innerHTML = ranks.map((rk,i)=>
+      `<div class="legend-item"><div class="legend-rect" style="background:${colors[i]}"></div>${rankLabel(rk)}</div>`
     ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${days.length} 天数据 · 每日总涨幅</div>`;
 
-    // populate hover tooltip data points
     chartPoints["canvas-daily"] = days.map((d,i) => ({
-      x: left+groupW*i+groupW/2,
-      label: d,
-      items: names.map((name,ni) => {
-        const v = seriesMap[name][i];
-        return { name, color: colors[ni], value: v, fmtValue: (v>=0?"+":"")+v.toLocaleString() };
+      x: left+groupW*i+groupW/2, label: d,
+      items: ranks.map((rk,ni) => {
+        const v = seriesMap[rk][i];
+        return { name: rankLabel(rk), color: colors[ni], value: v, fmtValue: (v>=0?"+":"")+v.toLocaleString() };
       })
     }));
 
   } else {
-    // Line chart: cross-day vote count trend (end-of-day votes)
+    // Line: end-of-day vote trend by rank
     const seriesMap = {};
-    names.forEach(n => { seriesMap[n] = []; });
-    for (const d of days) {
-      for (const nm of names) {
-        const row = stats.find(s => s.date===d && s.name===nm);
-        seriesMap[nm].push(row ? row.endVotes : null);
-      }
-    }
+    ranks.forEach(rk => { seriesMap[rk] = dailyByRank[rk].map(d => d ? d.endVotes : null); });
 
     const allVals = Object.values(seriesMap).flat().filter(v=>v!==null);
     if (!allVals.length) { showChartEmpty("canvas-daily","legend-daily","暂无数据"); return; }
@@ -2475,21 +2491,16 @@ function renderDailyChart() {
     ctx.clearRect(0,0,w,h);
     drawGrid(ctx,left,top,right,bottom,steps,"rgba(200,205,220,0.7)");
     drawYLabels(ctx,left,top,bottom,lo,hi,steps,"#8888aa",fmtNum);
-    // X labels (dates)
     ctx.fillStyle="#8888aa"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="center";
     const step2=Math.max(1,Math.floor(days.length/6));
-    days.forEach((d,i)=>{if(i%step2===0||i===days.length-1){const x=left+(right-left)*i/(days.length-1||1);ctx.fillText(d.substring(5),x,bottom+16);}});
+    days.forEach((d,i)=>{ if(i%step2===0||i===days.length-1){ const x=left+(right-left)*i/(days.length-1||1); ctx.fillText(d.substring(5),x,bottom+16); } });
 
-    names.forEach((name,ni)=>{
-      const series = seriesMap[name];
+    ranks.forEach((rk,ni)=>{
+      const series = seriesMap[rk];
       const pts=[];
-      series.forEach((v,i)=>{
-        if(v!==null) pts.push({x:left+(right-left)*i/(days.length-1||1), y:top+(bottom-top)*(1-(v-lo)/(hi-lo))});
-      });
+      series.forEach((v,i)=>{ if(v!==null) pts.push({x:left+(right-left)*i/(days.length-1||1), y:top+(bottom-top)*(1-(v-lo)/(hi-lo))}); });
       if(pts.length<1) return;
-      // fill
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x,bottom);
+      ctx.beginPath(); ctx.moveTo(pts[0].x,bottom);
       pts.forEach(p=>ctx.lineTo(p.x,p.y));
       ctx.lineTo(pts[pts.length-1].x,bottom);
       ctx.closePath();
@@ -2499,24 +2510,18 @@ function renderDailyChart() {
         for(let i=1;i<pts.length;i++){const mx=(pts[i-1].x+pts[i].x)/2;ctx.bezierCurveTo(mx,pts[i-1].y,mx,pts[i].y,pts[i].x,pts[i].y);}
         ctx.strokeStyle=colors[ni]; ctx.lineWidth=2.5; ctx.stroke();
       }
-      pts.forEach(p=>{
-        ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2);
-        ctx.fillStyle="#fff"; ctx.fill();
-        ctx.strokeStyle=colors[ni]; ctx.lineWidth=2; ctx.stroke();
-      });
+      pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fillStyle="#fff"; ctx.fill(); ctx.strokeStyle=colors[ni]; ctx.lineWidth=2; ctx.stroke(); });
     });
 
-    leg.innerHTML = names.map((nm,i)=>
-      `<div class="legend-item"><div class="legend-dot" style="background:${colors[i]}"></div>${nm}</div>`
+    leg.innerHTML = ranks.map((rk,i)=>
+      `<div class="legend-item"><div class="legend-dot" style="background:${colors[i]}"></div>${rankLabel(rk)}</div>`
     ).join("")+`<div class="legend-item" style="margin-left:auto;color:var(--text3)">${days.length} 天 · 每日末票数趋势</div>`;
 
-    // populate hover tooltip data points
     chartPoints["canvas-daily"] = days.map((d,i) => ({
-      x: left+(right-left)*i/(days.length-1||1),
-      label: d,
-      items: names.map((name,ni) => {
-        const v = seriesMap[name][i];
-        return { name, color: colors[ni], value: v, fmtValue: v===null ? "—" : v.toLocaleString() };
+      x: left+(right-left)*i/(days.length-1||1), label: d,
+      items: ranks.map((rk,ni) => {
+        const v = seriesMap[rk][i];
+        return { name: rankLabel(rk), color: colors[ni], value: v, fmtValue: v===null ? "—" : v.toLocaleString() };
       })
     }));
   }
@@ -2590,6 +2595,11 @@ document.getElementById("chart-day-pick").addEventListener("change", e => {
   chartDayPick = e.target.value;
   // disable the relative-range selector while a specific day is picked, for clarity
   document.getElementById("chart-days-select").disabled = !!chartDayPick;
+  renderAllCharts();
+});
+
+document.getElementById("chart-rank-count").addEventListener("change", e => {
+  chartRankCount = parseInt(e.target.value);
   renderAllCharts();
 });
 
